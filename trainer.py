@@ -141,12 +141,12 @@ def train_mix(
     model_local,
     model_gate,
     train_loader,
-    train_gate_only = False
+    train_gate_only=False,
 ):
     model_global.train()
     model_local.train()
     model_gate.train()
-    
+
     gate_best = model_gate.state_dict()
     local_best = model_local.state_dict()
     global_best = model_global.state_dict()
@@ -176,36 +176,38 @@ def train_mix(
             model_global.zero_grad()
             model_local.zero_grad()
             model_gate.zero_grad()
-            
+
             gate_weight = model_gate(images)
             local_prob = model_local(images)
             global_prob = model_global(images)
-            
+
             log_probs = gate_weight * local_prob + (1 - gate_weight) * global_prob
             loss = criterion(log_probs, labels)
-            
+
             accelerator.backward(loss)
             optimizer.step()
-            
+
             total_loss += loss.item()
-            
+
             cur_pred = log_probs.argmax(dim=1).cpu().numpy()
             cur_label = labels.cpu().numpy()
             y_true.extend(cur_label)
             y_pred.extend(cur_pred)
-            
+
         epoch_loss = total_loss / len(train_loader)
         avg_acc = accuracy_score(y_true, y_pred)
-        accelerator.print(f"Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}")
+        accelerator.print(
+            f"Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}"
+        )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
             gate_best = model_gate.state_dict()
             local_best = model_local.state_dict()
             global_best = model_global.state_dict()
-            
+
     return gate_best, local_best, global_best, epoch_loss, train_acc_best
-            
-            
+
+
 def validate(accelerator, model, test_loader):
     model.eval()
     criterion = nn.CrossEntropyLoss()
@@ -214,7 +216,9 @@ def validate(accelerator, model, test_loader):
     total_loss = 0.0
     model, test_loader, criterion = accelerator.prepare(model, test_loader, criterion)
     with torch.no_grad():
-        for idx, (images, labels) in enumerate(tqdm(test_loader, desc="Validating Single")):
+        for idx, (images, labels) in enumerate(
+            tqdm(test_loader, desc="Validating Single")
+        ):
             outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
@@ -225,43 +229,45 @@ def validate(accelerator, model, test_loader):
             y_pred.extend(cur_pred)
     avg_acc = accuracy_score(y_true, y_pred)
     avg_loss = total_loss / len(test_loader)
-    
+
     accelerator.print(f"Validating Global - Loss: {avg_loss}, acc: {avg_acc}")
     return avg_acc, avg_loss
-    
-    
+
+
 def validate_mix(accelerator, model_global, model_local, model_gate, test_loader):
     model_local.eval()
     model_global.eval()
     model_gate.eval()
-    
+
     criterion = nn.CrossEntropyLoss()
     y_true = []
     y_pred = []
     total_loss = 0.0
-    model_local, model_global, model_gate, test_loader, criterion = accelerator.prepare(model_local, model_global, model_gate, test_loader, criterion)
+    model_local, model_global, model_gate, test_loader, criterion = accelerator.prepare(
+        model_local, model_global, model_gate, test_loader, criterion
+    )
     with torch.no_grad():
-        for idx, (images, labels) in enumerate(tqdm(test_loader, desc="Validating Mix")):
+        for idx, (images, labels) in enumerate(
+            tqdm(test_loader, desc="Validating Mix")
+        ):
             gate_weight = model_gate(images)
             local_prob = model_local(images)
             global_prob = model_global(images)
-            
-            
+
             log_probs = gate_weight * local_prob + (1 - gate_weight) * global_prob
             loss = criterion(log_probs, labels)
             total_loss += loss.item()
-            
+
             cur_pred = log_probs.argmax(dim=1).cpu().numpy()
             cur_label = labels.cpu().numpy()
             y_true.extend(cur_label)
             y_pred.extend(cur_pred)
-    
+
     avg_loss = total_loss / len(test_loader)
     avg_acc = accuracy_score(y_true, y_pred)
     accelerator.print(f"Validating Mix - Loss: {avg_loss}, acc: {avg_acc}")
     return avg_acc, avg_loss
-    
-    
+
 
 if __name__ == "__main__":
     logger.debug("Start training")
@@ -289,9 +295,8 @@ if __name__ == "__main__":
         accelerator, 5, model_global, model_local, model_gate, train_loader, False
     )
 
-    acc_mix, loss_mix = validate_mix(accelerator, model_global, model_local, model_gate, test_loader)
+    acc_mix, loss_mix = validate_mix(
+        accelerator, model_global, model_local, model_gate, test_loader
+    )
     acc_global, loss_global = validate(accelerator, model_global, test_loader)
     acc_local, loss_local = validate(accelerator, model_local, test_loader)
-    
-    
-    

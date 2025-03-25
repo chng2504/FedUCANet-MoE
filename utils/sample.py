@@ -48,8 +48,6 @@ class ImageDataset(datasets.ImageFolder):
 
     def __len__(self) -> int:
         return len(self.samples)
-    
-    
 
 
 class FLDataPartitioner:
@@ -84,17 +82,17 @@ class FLDataPartitioner:
         # 合并所有样本索引
         all_indices = np.arange(len(self.dataset))
         np.random.shuffle(all_indices)
-      
+
         # 均匀划分
         split_indices = np.array_split(all_indices, self.num_clients)
         return [indices.tolist() for indices in split_indices]
 
     def non_iid_split(
-        self, 
+        self,
         alpha: float = 0.5,
         benign_ratio: float = 0.8,
-        minority_classes: List[str] = ['gas', 'steering_wheel'],
-        min_samples: int = 15
+        minority_classes: List[str] = ["gas", "steering_wheel"],
+        min_samples: int = 15,
     ) -> List[List[int]]:
         """
         Non-IID划分策略：
@@ -103,17 +101,17 @@ class FLDataPartitioner:
         - 特殊处理小样本类别
         """
         # 分离正常类和异常类
-        normal_indices = self.class_indices['benign']
+        normal_indices = self.class_indices["benign"]
         anomaly_indices = []
         for cls in self.class_indices:
-            if cls != 'benign':
+            if cls != "benign":
                 anomaly_indices.extend(self.class_indices[cls])
 
         # 划分正常样本（使用更集中的分布）
-        normal_dist = self._dirichlet_split(normal_indices, alpha=alpha/2)
-      
+        normal_dist = self._dirichlet_split(normal_indices, alpha=alpha / 2)
+
         # 划分异常样本（使用更均匀的分布）
-        anomaly_dist = self._dirichlet_split(anomaly_indices, alpha=alpha*2)
+        anomaly_dist = self._dirichlet_split(anomaly_indices, alpha=alpha * 2)
 
         # 合并并保证最小样本量
         client_indices = []
@@ -124,7 +122,7 @@ class FLDataPartitioner:
                 extra = np.random.choice(
                     np.concatenate([normal_indices, anomaly_indices]),
                     size=min_samples - len(combined),
-                    replace=False
+                    replace=False,
                 )
                 combined.extend(extra)
             np.random.shuffle(combined)
@@ -135,9 +133,9 @@ class FLDataPartitioner:
             if minority_cls in self.class_indices:
                 cls_indices = self.class_indices[minority_cls]
                 target_clients = np.random.choice(
-                    self.num_clients, 
-                    size=int(self.num_clients*0.3),  # 至少出现在30%的客户端
-                    replace=False
+                    self.num_clients,
+                    size=int(self.num_clients * 0.3),  # 至少出现在30%的客户端
+                    replace=False,
                 )
                 for client_id in target_clients:
                     client_indices[client_id].extend(cls_indices)
@@ -157,32 +155,35 @@ class FLDataPartitioner:
         num_samples = len(indices)
         allocations = (np.cumsum(proportions) * num_samples).astype(int)[:-1]
         split_indices = np.split(np.random.permutation(indices), allocations)
-      
+
         # 填充结果
         return [list(indices) for indices in split_indices]
 
-    def print_distribution(self, client_indices: List[List[int]], enable_benign: bool = False):
+    def print_distribution(
+        self, client_indices: List[List[int]], enable_benign: bool = False
+    ):
         """可视化各客户端的数据分布"""
         for client_id, indices in enumerate(client_indices):
             dist = self._get_class_distribution(indices)
             print(f"Client {client_id} ({len(indices)} samples):")
             for cls, count in sorted(dist.items(), key=lambda x: x[1], reverse=True):
                 # skip benign
-                if cls == 'benign':
+                if cls == "benign":
                     if not enable_benign:
                         continue
                 print(f"  {cls}: {count}")
-            print("-"*50)
-            
-    def visualize_distribution_plot(self, 
-                                    client_indices: List[List[int]], 
-                                    figsize=(16, 8),
-                                    title: str = 'Client Data Distribution',
-                                    ):
+            print("-" * 50)
+
+    def visualize_distribution_plot(
+        self,
+        client_indices: List[List[int]],
+        figsize=(16, 8),
+        title: str = "Client Data Distribution",
+    ):
         """可视化各客户端的数据分布（多色条形图版）"""
         # 获取所有类别列表
         all_classes = list(self.class_to_idx.keys())
-    
+
         # 收集每个客户端的数据分布
         client_data = []
         for client_id, indices in enumerate(client_indices):
@@ -191,56 +192,53 @@ class FLDataPartitioner:
                 # skip benign
                 _, class_idx = self.dataset.samples[idx]
                 class_name = self.idx_to_class[class_idx]
-                if class_name == 'benign':
+                if class_name == "benign":
                     continue
                 class_counts[class_name] += 1
-        
+
             # 填充所有类别的计数（包括0值的类别）
             # skip benign
-            counts = {cls: class_counts.get(cls, 0) for cls in all_classes if cls != 'benign'}
-            counts['client'] = f'Client {client_id}'
+            counts = {
+                cls: class_counts.get(cls, 0) for cls in all_classes if cls != "benign"
+            }
+            counts["client"] = f"Client {client_id}"
             client_data.append(counts)
 
         # 转换为DataFrame
-        df = pd.DataFrame(client_data).set_index('client')
-    
+        df = pd.DataFrame(client_data).set_index("client")
+
         # 创建颜色映射
-        colormap = get_cmap('tab20')
+        colormap = get_cmap("tab20")
         colors = [colormap(i % 20) for i in range(len(all_classes))]
-    
+
         # 创建堆叠条形图
         plt.figure(figsize=figsize)
         ax = df.plot.bar(
-            stacked=True,
-            color=colors,
-            width=0.8,
-            edgecolor='white',
-            linewidth=0.5
+            stacked=True, color=colors, width=0.8, edgecolor="white", linewidth=0.5
         )
 
         # 设置图形参数
         plt.title(title, fontsize=14, pad=20)
-        plt.xlabel('Client ID', fontsize=12, labelpad=10)
-        plt.ylabel('Sample Count', fontsize=12, labelpad=10)
-        plt.xticks(rotation=45, ha='right', fontsize=10)
+        plt.xlabel("Client ID", fontsize=12, labelpad=10)
+        plt.ylabel("Sample Count", fontsize=12, labelpad=10)
+        plt.xticks(rotation=45, ha="right", fontsize=10)
         plt.yticks(fontsize=10)
-    
+
         # 调整图例
         handles, labels = ax.get_legend_handles_labels()
         plt.legend(
             reversed(handles),
             reversed(labels),
-            title='Classes',
+            title="Classes",
             bbox_to_anchor=(1.05, 1),
-            loc='upper left',
+            loc="upper left",
             fontsize=8,
-            title_fontsize=10
+            title_fontsize=10,
         )
-
 
         # 调整布局
         plt.tight_layout()
-        plt.grid(axis='y', alpha=0.3)
+        plt.grid(axis="y", alpha=0.3)
         plt.show()
 
 
@@ -250,23 +248,17 @@ class ClientDataset(torch.utils.data.Dataset):
         self.client_indices = client_indices
         self.samples = [original_dataset.samples[i] for i in client_indices]
         self.targets = [original_dataset.targets[i] for i in client_indices]
-      
+
     def __getitem__(self, index):
         global_idx = self.client_indices[index]
         return self.original_dataset[global_idx]
-  
+
     def __len__(self):
         return len(self.client_indices)
-  
+
     def get_paths_labels(self):
         """获取当前客户端所有样本的路径和标签"""
         return [
             (self.original_dataset.samples[i][0], self.original_dataset.targets[i])
             for i in self.client_indices
         ]
-        
-        
-        
-
-    
-    
