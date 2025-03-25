@@ -286,17 +286,9 @@ if __name__ == "__main__":
 
     # model._kaiming_init()
 
-    # param = None
-    # for epoch in range(CONFIG["epochs"]):
-    #     param, last_loss = train_one_epoch(accelerator, epoch, model, train_loader, optimizer, criterion)
-    #     assert False
-
-    gate_best, local_best, global_best, epoch_loss, train_acc_best = train_mix(
-        accelerator, 5, model_global, model_local, model_gate, train_loader, False
-    )
-
-    acc_mix, loss_mix = validate_mix(
-        accelerator, model_global, model_local, model_gate, test_loader
-    )
-    acc_global, loss_global = validate(accelerator, model_global, test_loader)
-    acc_local, loss_local = validate(accelerator, model_local, test_loader)
+    param = None
+    for epoch in range(CONFIG["epochs"]):
+        param, last_loss = train_one_epoch(
+            accelerator, epoch, model_global, train_loader
+        )
+        assert False

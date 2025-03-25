@@ -7,9 +7,15 @@ from matplotlib.cm import get_cmap
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import dotenv
+from torch.utils.data import DataLoader
+dotenv.load_dotenv()
 
 DEFAULT_IMAGE_SIZE = 224
 
+CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
+CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
 
 class ImageDataset(datasets.ImageFolder):
     def __init__(self, root: str, transform: Optional[Callable] = None):
@@ -262,3 +268,21 @@ class ClientDataset(torch.utils.data.Dataset):
             (self.original_dataset.samples[i][0], self.original_dataset.targets[i])
             for i in self.client_indices
         ]
+
+
+if __name__ == "__main__":
+    train_ds = ImageDataset(os.path.join(CIC_IOV2024_IMAGE_DATASET_PATH, "train"))
+    client_num = 20
+
+    partitioner = FLDataPartitioner(train_ds, client_num)
+    client_indices = partitioner.non_iid_split(alpha=1.0)
+    
+    client_datasets = [ClientDataset(train_ds, client_indices[i]) for i in range(client_num)]
+
+    client_dataloaders = [
+        DataLoader(client_datasets[i], batch_size=128, shuffle=True)
+        for i in range(client_num)
+    ]
+
+    
+
