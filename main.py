@@ -43,7 +43,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 10,
     "local_rounds": 3,
-    "learning_rate": 3e-5,
+    "learning_rate": 2e-5,
 }
 
 
@@ -132,13 +132,12 @@ def train_finetune(
     model, optimizer, train_loader, criterion = accelerator.prepare(
         model, optimizer, train_loader, criterion
     )
-    y_true = []
-    y_pred = []
-    total_loss = 0.0
-    last_loss = 0.0
-    model_best = model.state_dict()
+
     train_acc_best = 0.0
     for epoch in range(local_epochs):
+        y_true = []
+        y_pred = []
+        total_loss = 0.0
         for  (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
             optimizer.zero_grad()
             outputs = model(images)
@@ -165,8 +164,7 @@ def train_finetune(
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
-            model_best = model.state_dict()
-    return model_best, epoch_loss
+    return  
 
 
 def train_mix(
@@ -184,12 +182,6 @@ def train_mix(
     model_local.train()
     model_gate.train()
 
-    gate_best = model_gate.state_dict()
-    local_best = model_local.state_dict()
-    global_best = model_global.state_dict()
-
-    y_true = []
-    y_pred = []
     train_acc_best = 0.0
     if train_gate_only:
         optimizer = optim.Adam(
@@ -215,6 +207,8 @@ def train_mix(
     )
     for epoch in range(local_epochs):
         total_loss = 0.0
+        y_true = []
+        y_pred = []
         for (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
             model_global.zero_grad()
             model_local.zero_grad()
@@ -251,11 +245,9 @@ def train_mix(
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
-            gate_best = model_gate.state_dict()
-            local_best = model_local.state_dict()
-            global_best = model_global.state_dict()
 
-    return gate_best, local_best, global_best, epoch_loss, train_acc_best
+
+    return train_acc_best
 
 
 def validate(
@@ -453,7 +445,7 @@ def main():
     for client in clients:
         logger.info(f"Training Client {client.idx}...")
         client.model_local.load_state_dict(global_model.state_dict())
-        cur_weight, _ = train_finetune(
+        train_finetune(
             client.idx,
             GLOBAL_ACCELERATOR,
             sw_config.get("local_rounds"),
@@ -480,7 +472,7 @@ def main():
             client.train_ds,
             args.swanlab,
         )
-        validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+        validate_mix(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.model_local, client.model_gate, client.test_ds, args.swanlab)
     logger.info("====[Mix] Training Finished=====")
 
 
