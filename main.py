@@ -431,12 +431,13 @@ def main():
         #! 2. 聚合并第二次加载全局模型
         fed_global_model_weight = aggregator.FedAvg(cur_client_weights, cur_ratio_list)
         global_model.load_state_dict(fed_global_model_weight)
-
-
+        # 每一轮都 validate global model，客户端用自己的 test_ds 做训练
+        validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
+        
     logger.info("====[FedAvg] Training Finished=====")
 
     logger.info("====[FedAvg] Evalualing global model...=====")
-    validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
+    #validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
     
 
     # ! 利用全局模型进行微调    
