@@ -7,6 +7,7 @@ from utils import sample
 from typing import List, Tuple
 from enum import Enum
 import numpy as np
+from models.mvn4 import MVN4TrimNet, GateTrimNet
 
 dotenv.load_dotenv()
 
@@ -46,6 +47,14 @@ class Client:
         )
         print(f"Global dataset size: {len(self.global_ds)}")
         print(f"Local dataset size: {len(self.local_ds)}")
+
+    @classmethod
+    def create_models(cls, num_classes: int):
+        return cls(
+            model_local=MVN4TrimNet(num_classes=num_classes),
+            model_global=MVN4TrimNet(num_classes=num_classes),
+            model_gate=GateTrimNet(),
+        )
 
 
 def prepare_client_datasets(
