@@ -48,7 +48,7 @@ sw_config = {
 
 
 def train_client(
-    idx,
+    client_idx,
     accelerator,
     epochs,
     model,
@@ -75,9 +75,7 @@ def train_client(
         total_loss = 0.0
         y_true = []
         y_pred = []
-        for idx, (images, labels) in enumerate(
-            tqdm(train_loader, desc=f"Client {idx} - Epoch [{epoch + 1}/{epochs}]")
-        ):
+        for (images, labels) in tqdm(train_loader, desc=f"Client {client_idx} - Epoch [{epoch + 1}/{epochs}]"):
             optimizer.zero_grad()
             # outputs = nn.Softmax(dim=-1)(model(images))
             outputs = model(images)
@@ -100,8 +98,8 @@ def train_client(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-fed-train-loss/{idx}-train_loss": train_loss,
-                    f"client-fed-train-acc/{idx}-train_acc": avg_acc,
+                    f"client-fed-train-loss/{client_idx}-train_loss": train_loss,
+                    f"client-fed-train-acc/{client_idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -114,7 +112,7 @@ def train_client(
 
 
 def train_finetune(
-    idx,
+    client_idx,
     accelerator,
     local_epochs,
     model,
@@ -141,9 +139,7 @@ def train_finetune(
     model_best = model.state_dict()
     train_acc_best = 0.0
     for epoch in range(local_epochs):
-        for idx, (images, labels) in enumerate(
-            tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]")
-        ):
+        for  (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -160,8 +156,8 @@ def train_finetune(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-finetune-train-loss/{idx}-train_loss": epoch_loss,
-                    f"client-finetune-train-acc/{idx}-train_acc": avg_acc,
+                    f"client-finetune-train-loss/{client_idx}-train_loss": epoch_loss,
+                    f"client-finetune-train-acc/{client_idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -174,7 +170,7 @@ def train_finetune(
 
 
 def train_mix(
-    idx,
+    client_idx,
     accelerator,
     local_epochs,
     model_global,
@@ -219,9 +215,7 @@ def train_mix(
     )
     for epoch in range(local_epochs):
         total_loss = 0.0
-        for idx, (images, labels) in enumerate(
-            tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]")
-        ):
+        for (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
             model_global.zero_grad()
             model_local.zero_grad()
             model_gate.zero_grad()
@@ -248,8 +242,8 @@ def train_mix(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-mix-train-loss/{idx}-train_loss": epoch_loss,
-                    f"client-mix-train-acc/{idx}-train_acc": avg_acc,
+                    f"client-mix-train-loss/{client_idx}-train_loss": epoch_loss,
+                    f"client-mix-train-acc/{client_idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -265,7 +259,7 @@ def train_mix(
 
 
 def validate(
-    idx, accelerator, model, test_ds: sample.ClientDataset, enable_swanlab=False
+    client_idx, accelerator, model, test_ds: sample.ClientDataset, enable_swanlab=False
 ):
     model.eval()
     criterion = nn.CrossEntropyLoss()
@@ -280,9 +274,7 @@ def validate(
     )
     model, test_loader, criterion = accelerator.prepare(model, test_loader, criterion)
     with torch.no_grad():
-        for idx, (images, labels) in enumerate(
-            tqdm(test_loader, desc="Validating Single")
-        ):
+        for (images, labels) in tqdm(test_loader, desc="Validating Single"):
             outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
@@ -294,11 +286,11 @@ def validate(
     avg_acc = accuracy_score(y_true, y_pred)
     avg_loss = total_loss / len(test_loader)
     if enable_swanlab:
-        if idx != -1:
+        if client_idx != -1:
             swanlab.log(
                 {
-                    f"client-validate-loss/{idx}-test_loss": avg_loss,
-                    f"client-validate-acc/{idx}-test_acc": avg_acc,
+                    f"client-validate-loss/{client_idx}-test_loss": avg_loss,
+                    f"client-validate-acc/{client_idx}-test_acc": avg_acc,
                 }
             )
         else:
@@ -313,7 +305,7 @@ def validate(
 
 
 def validate_mix(
-    idx,
+    client_idx,
     accelerator,
     model_global,
     model_local,
@@ -339,9 +331,7 @@ def validate_mix(
         model_local, model_global, model_gate, test_loader, criterion
     )
     with torch.no_grad():
-        for idx, (images, labels) in enumerate(
-            tqdm(test_loader, desc="Validating Mix")
-        ):
+        for (images, labels) in tqdm(test_loader, desc="Validating Mix"):
             gate_weight = model_gate(images)
             local_prob = model_local(images)
             global_prob = model_global(images)
@@ -358,11 +348,11 @@ def validate_mix(
     avg_loss = total_loss / len(test_loader)
     avg_acc = accuracy_score(y_true, y_pred)
     if enable_swanlab:
-        if idx != -1:
+        if client_idx != -1:
             swanlab.log(
                 {
-                    f"client-mix-validate-loss/{idx}-test_loss": avg_loss,
-                    f"client-mix-validate-acc/{idx}-test_acc": avg_acc,
+                    f"client-mix-validate-loss/{client_idx}-test_loss": avg_loss,
+                    f"client-mix-validate-acc/{client_idx}-test_acc": avg_acc,
                 }
             )
         else:
