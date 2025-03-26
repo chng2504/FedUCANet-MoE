@@ -20,7 +20,7 @@ CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
 CUR_DATASET = "ciciov2024"
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
 CONFIG = {
-    "learning_rate": 1e-4,
+    "learning_rate": 5e-4,
     "batch_size": 128,
     "device": GLOBAL_ACCELERATOR.device,
     "num_clients": 10,

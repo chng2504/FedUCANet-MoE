@@ -64,6 +64,9 @@ def main():
         cur_clients: List[clientor.Client] = random.sample(
             clients, CONFIG["client_per_round"]
         )
+        # !. 1. 第一次加载全局模型
+        for client in cur_clients:
+            client.model_global.load_state_dict(fed_global_model_weight)
         cur_client_weights: List[Dict[str, torch.Tensor]] = []
         cur_client_idxeds = [client.idx for client in cur_clients]
 
@@ -88,8 +91,11 @@ def main():
             )
             cur_client_weights.append(cur_weight)
 
+        #! 2. 聚合并第二次加载全局模型
         fed_global_model_weight = aggregator.FedAvg(cur_client_weights, cur_ratio_list)
         global_model.load_state_dict(fed_global_model_weight)
+        for client in cur_clients:
+            client.model_global.load_state_dict(fed_global_model_weight)
 
 
 if __name__ == "__main__":
