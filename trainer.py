@@ -6,7 +6,7 @@ import os
 from torch import nn, optim
 from models.mvn4 import MVN4TrimNet, GateTrimNet
 from torch.utils.data import DataLoader
-from utils.sample import ImageDataset
+from utils.sample import ImageDataset, ClientDataset
 from tqdm import tqdm
 from loguru import logger
 
@@ -20,7 +20,7 @@ CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
 CUR_DATASET = "ciciov2024"
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
 CONFIG = {
-    "learning_rate": 1e-5,
+    "learning_rate": 1e-4,
     "batch_size": 128,
     "device": GLOBAL_ACCELERATOR.device,
     "num_clients": 10,
@@ -53,52 +53,74 @@ def prepare_dataset(
     return train_loader, test_loader
 
 
-def train_one_epoch(accelerator, epoch, model, train_loader):
+def train_one_epoch(
+    accelerator, epochs, model, train_ds: ClientDataset, learning_rate=1e-5
+):
     model.train()
-    optimizer = optim.AdamW(model.parameters(), lr=CONFIG["learning_rate"])
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=CONFIG["batch_size"],
+        shuffle=True,
+        num_workers=CONFIG["num_workers"],
+    )
     model, optimizer, train_loader, criterion = accelerator.prepare(
         model, optimizer, train_loader, criterion
     )
 
-    y_true = []
-    y_pred = []
-    total_loss = 0.0
     last_loss = 0.0
-    for idx, (images, labels) in enumerate(
-        tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{CONFIG['epochs']}]")
-    ):
-        optimizer.zero_grad()
-        # outputs = nn.Softmax(dim=-1)(model(images))
-        outputs = model(images)
-        loss = criterion(outputs, labels)
+    model_best = model.state_dict()
+    train_acc_best = 0.0
+    for epoch in range(epochs):
+        total_loss = 0.0
+        y_true = []
+        y_pred = []
+        for idx, (images, labels) in enumerate(
+            tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{epochs}]")
+        ):
+            optimizer.zero_grad()
+            # outputs = nn.Softmax(dim=-1)(model(images))
+            outputs = model(images)
+            loss = criterion(outputs, labels)
 
-        # loss.backward()
-        accelerator.backward(loss)
+            # loss.backward()
+            accelerator.backward(loss)
 
-        optimizer.step()
-        total_loss += loss.item()
+            optimizer.step()
+            total_loss += loss.item()
 
-        _, predicted = torch.max(outputs, 1)
-        cur_pred = predicted.cpu().numpy()
-        cur_label = labels.cpu().numpy()
-        y_true.extend(cur_label)
-        y_pred.extend(cur_pred)
-        last_loss = loss.item()
+            _, predicted = torch.max(outputs, 1)
+            cur_pred = predicted.cpu().numpy()
+            cur_label = labels.cpu().numpy()
+            y_true.extend(cur_label)
+            y_pred.extend(cur_pred)
+            last_loss = loss.item()
 
-    train_loss = total_loss / len(train_loader)
-    avg_acc = accuracy_score(y_true, y_pred)
+        train_loss = total_loss / len(train_loader)
+        avg_acc = accuracy_score(y_true, y_pred)
 
-    accelerator.print(
-        f"Epoch [{epoch + 1}/{CONFIG['epochs']}] - Loss: {train_loss}, acc: {avg_acc}"
-    )
-    return model.state_dict(), last_loss
+        accelerator.print(
+            f"Epoch [{epoch + 1}/{epochs}] - Loss: {train_loss}, acc: {avg_acc}"
+        )
+        if avg_acc > train_acc_best:
+            train_acc_best = avg_acc
+            model_best = model.state_dict()
+    return model_best, last_loss
 
 
-def train_finetune(accelerator, local_epochs, model, train_loader):
+def train_finetune(
+    accelerator, local_epochs, model, train_ds: ClientDataset, learning_rate=1e-5
+):
     model.train()
-    optimizer = optim.AdamW(model.parameters(), lr=CONFIG["learning_rate"])
+    optimizer = optim.AdamW(model.parameters(), lr=learning_rate)
     criterion = nn.CrossEntropyLoss()
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=CONFIG["batch_size"],
+        shuffle=True,
+        num_workers=CONFIG["num_workers"],
+    )
     model, optimizer, train_loader, criterion = accelerator.prepare(
         model, optimizer, train_loader, criterion
     )
@@ -140,7 +162,7 @@ def train_mix(
     model_global,
     model_local,
     model_gate,
-    train_loader,
+    train_ds: ClientDataset,
     train_gate_only=False,
 ):
     model_global.train()
@@ -163,6 +185,12 @@ def train_mix(
         )
 
     criterion = nn.CrossEntropyLoss()
+    train_loader = DataLoader(
+        train_ds,
+        batch_size=CONFIG["batch_size"],
+        shuffle=True,
+        num_workers=CONFIG["num_workers"],
+    )
     model_global, model_local, model_gate, optimizer, train_loader, criterion = (
         accelerator.prepare(
             model_global, model_local, model_gate, optimizer, train_loader, criterion
@@ -208,12 +236,18 @@ def train_mix(
     return gate_best, local_best, global_best, epoch_loss, train_acc_best
 
 
-def validate(accelerator, model, test_loader):
+def validate(accelerator, model, test_ds: ClientDataset):
     model.eval()
     criterion = nn.CrossEntropyLoss()
     y_true = []
     y_pred = []
     total_loss = 0.0
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=CONFIG["batch_size"],
+        shuffle=False,
+        num_workers=CONFIG["num_workers"],
+    )
     model, test_loader, criterion = accelerator.prepare(model, test_loader, criterion)
     with torch.no_grad():
         for idx, (images, labels) in enumerate(
@@ -234,7 +268,9 @@ def validate(accelerator, model, test_loader):
     return avg_acc, avg_loss
 
 
-def validate_mix(accelerator, model_global, model_local, model_gate, test_loader):
+def validate_mix(
+    accelerator, model_global, model_local, model_gate, test_ds: ClientDataset
+):
     model_local.eval()
     model_global.eval()
     model_gate.eval()
@@ -243,6 +279,12 @@ def validate_mix(accelerator, model_global, model_local, model_gate, test_loader
     y_true = []
     y_pred = []
     total_loss = 0.0
+    test_loader = DataLoader(
+        test_ds,
+        batch_size=CONFIG["batch_size"],
+        shuffle=False,
+        num_workers=CONFIG["num_workers"],
+    )
     model_local, model_global, model_gate, test_loader, criterion = accelerator.prepare(
         model_local, model_global, model_gate, test_loader, criterion
     )
