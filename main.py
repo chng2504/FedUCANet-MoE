@@ -32,7 +32,6 @@ PROJECT_NAME: str = "FL-MoE"
 EXPERIMENT_NAME: str = "2025-03-26"
 DESCRIPTION: str = "联邦MoE模型训练"
 sw_config = {
-    "learning_rate": 5e-4,
     "batch_size": 128,
     "device": GLOBAL_ACCELERATOR.device,
     "num_clients": 10,
@@ -44,7 +43,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 10,
     "local_rounds": 3,
-    "learning_rate": 1e-5,
+    "learning_rate": 3e-5,
 }
 
 
@@ -295,13 +294,21 @@ def validate(
     avg_acc = accuracy_score(y_true, y_pred)
     avg_loss = total_loss / len(test_loader)
     if enable_swanlab:
-        swanlab.log(
-            {
-                f"client-validate/{idx}-test_loss": avg_loss,
-                f"client-validate/{idx}-test_acc": avg_acc,
-            }
-        )
-    accelerator.print(f"Validating Global - Loss: {avg_loss}, acc: {avg_acc}")
+        if idx != -1:
+            swanlab.log(
+                {
+                    f"client-validate/{idx}-test_loss": avg_loss,
+                    f"client-validate/{idx}-test_acc": avg_acc,
+                }
+            )
+        else:
+            swanlab.log(
+                {
+                    f"global/validate-test_loss": avg_loss,
+                    f"global/validate-test_acc": avg_acc,
+                }
+            )
+    accelerator.print(f"Validating - Loss: {avg_loss}, acc: {avg_acc}")
     return avg_acc, avg_loss
 
 
@@ -351,12 +358,20 @@ def validate_mix(
     avg_loss = total_loss / len(test_loader)
     avg_acc = accuracy_score(y_true, y_pred)
     if enable_swanlab:
-        swanlab.log(
-            {
-                f"client-mix-validate/{idx}-test_loss": avg_loss,
-                f"client-mix-validate/{idx}-test_acc": avg_acc,
-            }
-        )
+        if idx != -1:
+            swanlab.log(
+                {
+                    f"client-mix-validate/{idx}-test_loss": avg_loss,
+                    f"client-mix-validate/{idx}-test_acc": avg_acc,
+                }
+            )
+        else:
+            swanlab.log(
+                {
+                    f"global/mix-validate-test_loss": avg_loss,
+                    f"global/mix-validate-test_acc": avg_acc,
+                }
+            )
     accelerator.print(f"Validating Mix - Loss: {avg_loss}, acc: {avg_acc}")
     return avg_acc, avg_loss
 
@@ -393,6 +408,7 @@ def main():
     # 客户端字典：idx -> client
     client_dict: Dict[int, clientor.Client] = {client.idx: client for client in clients}
     fed_global_model_weight = global_model.state_dict()
+    logger.info("====[FedAvg] Start Training...=====")
     for round in range(sw_config.get("global_rounds")):
         print(
             f"========== Global Round [{round + 1} / {sw_config.get('global_rounds')}] Start =========="
@@ -401,13 +417,15 @@ def main():
             clients, sw_config.get("client_per_round")
         )
         # ! 1. 第一次加载全局模型
+        cur_ratio_list = []
         for client in cur_clients:
             client.model_global.load_state_dict(fed_global_model_weight)
+            cur_ratio_list.append(len(client.global_ds))
         cur_client_weights: List[Dict[str, torch.Tensor]] = []
         cur_client_idxeds = [client.idx for client in cur_clients]
 
-        cur_ratio_list = ratio_list[cur_client_idxeds]
-        cur_ratio_list = cur_ratio_list / np.sum(cur_ratio_list)
+        cur_ratio_list = np.array(cur_ratio_list) / np.sum(cur_ratio_list)
+        
 
         logger.info(f"Current Clients: {cur_client_idxeds}, Ratio: {cur_ratio_list}")
         for client in cur_clients:
@@ -432,8 +450,47 @@ def main():
         #! 2. 聚合并第二次加载全局模型
         fed_global_model_weight = aggregator.FedAvg(cur_client_weights, cur_ratio_list)
         global_model.load_state_dict(fed_global_model_weight)
-        for client in cur_clients:
-            client.model_global.load_state_dict(fed_global_model_weight)
+
+
+    logger.info("====[FedAvg] Training Finished=====")
+
+
+    validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
+    
+
+    # ! 利用全局模型进行微调    
+    logger.info("====[Finetune] Start Training...=====")
+    for client in clients:
+        logger.info(f"Training Client {client.idx}...")
+        client.model_local.load_state_dict(global_model.state_dict())
+        cur_weight, _ = train_finetune(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            sw_config.get("local_rounds"),
+            client.model_local,
+            client.local_ds,
+            sw_config.get("learning_rate"),
+            args.swanlab,
+        )
+        validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+    logger.info("====[Finetune] Training Finished=====")
+    
+    
+    logger.info("====[Mix] Start Training...=====")
+    for client in clients:
+        logger.info(f"Training Client {client.idx}...")
+        train_mix(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            sw_config.get("local_rounds"),
+            client.model_global,
+            client.model_local,
+            client.model_gate,
+            client.train_ds,
+            args.swanlab,
+        )
+        validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+    logger.info("====[Mix] Training Finished=====")
 
 
 if __name__ == "__main__":

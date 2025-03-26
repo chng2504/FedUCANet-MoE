@@ -48,13 +48,11 @@ class Client:
         print(f"Global dataset size: {len(self.global_ds)}")
         print(f"Local dataset size: {len(self.local_ds)}")
 
-    @classmethod
-    def create_models(cls, num_classes: int):
-        return cls(
-            model_local=MVN4TrimNet(num_classes=num_classes),
-            model_global=MVN4TrimNet(num_classes=num_classes),
-            model_gate=GateTrimNet(),
-        )
+    
+    def create_models(self, num_classes: int):
+        self.model_local = MVN4TrimNet(num_classes=num_classes)
+        self.model_global = MVN4TrimNet(num_classes=num_classes)
+        self.model_gate = GateTrimNet()
 
 
 def prepare_client_datasets(
