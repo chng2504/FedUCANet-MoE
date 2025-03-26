@@ -43,7 +43,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 10,
     "local_rounds": 3,
-    "learning_rate": 2e-5,
+    "learning_rate": 5e-5,
 }
 
 
@@ -343,8 +343,8 @@ def validate_mix(
         if client_idx != -1:
             swanlab.log(
                 {
-                    f"client-mix-validate-loss/{client_idx}-test_loss": avg_loss,
-                    f"client-mix-validate-acc/{client_idx}-test_acc": avg_acc,
+                    f"client-validate-loss/{client_idx}-test_loss": avg_loss,
+                    f"client-validate-acc/{client_idx}-test_acc": avg_acc,
                 }
             )
         else:
@@ -460,6 +460,7 @@ def main():
     
     
     logger.info("====[Mix] Start Training...=====")
+    train_gate_only=False
     for client in clients:
         logger.info(f"Training Client {client.idx}...")
         train_mix(
@@ -470,6 +471,7 @@ def main():
             client.model_local,
             client.model_gate,
             client.train_ds,
+            train_gate_only,
             args.swanlab,
         )
         validate_mix(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.model_local, client.model_gate, client.test_ds, args.swanlab)
