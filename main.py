@@ -14,6 +14,7 @@ import argparse
 import random
 from typing import Dict, List
 import numpy as np
+
 # import torch_npu
 import clientor
 import aggregator
@@ -22,7 +23,7 @@ dotenv.load_dotenv()
 
 CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
 CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
-CUR_DATASET = "carhacking"
+CUR_DATASET = "ciciov2024"
 
 
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
@@ -43,7 +44,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 20,
     "local_rounds": 3,
-    "learning_rate": 5e-5,
+    "learning_rate": 4e-5,
 }
 
 
@@ -75,7 +76,9 @@ def train_client(
         total_loss = 0.0
         y_true = []
         y_pred = []
-        for (images, labels) in tqdm(train_loader, desc=f"Client {client_idx} - Epoch [{epoch + 1}/{epochs}]"):
+        for images, labels in tqdm(
+            train_loader, desc=f"Client {client_idx} - Epoch [{epoch + 1}/{epochs}]"
+        ):
             optimizer.zero_grad()
             # outputs = nn.Softmax(dim=-1)(model(images))
             outputs = model(images)
@@ -138,7 +141,9 @@ def train_finetune(
         y_true = []
         y_pred = []
         total_loss = 0.0
-        for  (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
+        for images, labels in tqdm(
+            train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"
+        ):
             optimizer.zero_grad()
             outputs = model(images)
             loss = criterion(outputs, labels)
@@ -164,7 +169,7 @@ def train_finetune(
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
-    return  
+    return
 
 
 def train_mix(
@@ -209,7 +214,9 @@ def train_mix(
         total_loss = 0.0
         y_true = []
         y_pred = []
-        for (images, labels) in tqdm(train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"):
+        for images, labels in tqdm(
+            train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"
+        ):
             model_global.zero_grad()
             model_local.zero_grad()
             model_gate.zero_grad()
@@ -246,7 +253,6 @@ def train_mix(
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
 
-
     return train_acc_best
 
 
@@ -266,7 +272,7 @@ def validate(
     )
     model, test_loader, criterion = accelerator.prepare(model, test_loader, criterion)
     with torch.no_grad():
-        for (images, labels) in tqdm(test_loader, desc="Validating Single"):
+        for images, labels in tqdm(test_loader, desc="Validating Single"):
             outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
@@ -323,7 +329,7 @@ def validate_mix(
         model_local, model_global, model_gate, test_loader, criterion
     )
     with torch.no_grad():
-        for (images, labels) in tqdm(test_loader, desc="Validating Mix"):
+        for images, labels in tqdm(test_loader, desc="Validating Mix"):
             gate_weight = model_gate(images)
             local_prob = model_local(images)
             global_prob = model_global(images)
@@ -369,8 +375,8 @@ def main():
     elif CUR_DATASET == "carhacking":
         DS_PATH = CAR_HACKING_IMAGE_DATASET_PATH
     else:
-        raise ValueError('no current dataset')
-    
+        raise ValueError("no current dataset")
+
     if args.swanlab:
         swanlab.init(
             project_name=PROJECT_NAME,
@@ -412,7 +418,6 @@ def main():
         cur_client_idxeds = [client.idx for client in cur_clients]
 
         cur_ratio_list = np.array(cur_ratio_list) / np.sum(cur_ratio_list)
-        
 
         logger.info(f"Current Clients: {cur_client_idxeds}, Ratio: {cur_ratio_list}")
         for client in cur_clients:
@@ -439,20 +444,25 @@ def main():
         global_model.load_state_dict(fed_global_model_weight)
         # 每一轮都 validate global model，客户端用自己的 test_ds 做训练
         validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
-        
+
     logger.info("====[FedAvg] Training Finished=====")
 
     logger.info("====[FedAvg] Evalualing global model...=====")
-    #validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
-    
+    # validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
 
-    # ! 利用全局模型进行微调    
+    # ! 利用全局模型进行微调
     logger.info("====[Finetune] Start Training...=====")
     fed_acc_list = []
     finetune_acc_list = []
     for client in clients:
         # 先用联邦全局模型测试私有的数据集准确率
-        fed_acc = validate(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.test_ds, args.swanlab)
+        fed_acc = validate(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            client.model_global,
+            client.test_ds,
+            args.swanlab,
+        )
         fed_acc_list.append(fed_acc)
         logger.info(f"Training Client {client.idx}...")
         client.model_local.load_state_dict(global_model.state_dict())
@@ -466,15 +476,19 @@ def main():
             args.swanlab,
         )
         client.model_local.load_state_dict(cur_weight)
-        fine_tune_acc = validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+        fine_tune_acc = validate(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            client.model_local,
+            client.test_ds,
+            args.swanlab,
+        )
         finetune_acc_list.append(fine_tune_acc)
     logger.info("====[Finetune] Training Finished=====")
 
-
-
     moe_acc_list = []
     logger.info("====[Mix] Start Training...=====")
-    train_gate_only=False
+    train_gate_only = False
     for client in clients:
         logger.info(f"Training Client {client.idx}...")
         train_mix(
@@ -488,17 +502,25 @@ def main():
             train_gate_only,
             args.swanlab,
         )
-        moe_acc = validate_mix(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.model_local, client.model_gate, client.test_ds, args.swanlab)
+        moe_acc = validate_mix(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            client.model_global,
+            client.model_local,
+            client.model_gate,
+            client.test_ds,
+            args.swanlab,
+        )
         moe_acc_list.append(moe_acc)
     logger.info("====[Mix] Training Finished=====")
-    
-    
+
     fed_acc_list = np.array(fed_acc_list)
     finetune_acc_list = np.array(finetune_acc_list)
     moe_acc_list = np.array(moe_acc_list)
-    print(f'fedavg-acc-mean: {np.mean(fed_acc_list)}')
-    print(f'fine-une-acc: {np.mean(finetune_acc_list)}')
-    print(f'moe-acc-mean: {np.mean(moe_acc_list)}')
+    print(f"fedavg-acc-mean: {np.mean(fed_acc_list)}")
+    print(f"fine-une-acc: {np.mean(finetune_acc_list)}")
+    print(f"moe-acc-mean: {np.mean(moe_acc_list)}")
+
 
 if __name__ == "__main__":
     main()
