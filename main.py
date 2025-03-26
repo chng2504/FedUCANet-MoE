@@ -22,7 +22,7 @@ dotenv.load_dotenv()
 
 CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
 CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
-CUR_DATASET = "ciciov2024"
+CUR_DATASET = "carhacking"
 
 
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
@@ -364,7 +364,13 @@ def main():
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0.0)
     args = parser.parse_args()
-
+    if CUR_DATASET == "ciciov2024":
+        DS_PATH = CIC_IOV2024_IMAGE_DATASET_PATH
+    elif CUR_DATASET == "carhacking":
+        DS_PATH = CAR_HACKING_IMAGE_DATASET_PATH
+    else:
+        raise ValueError('no current dataset')
+    
     if args.swanlab:
         swanlab.init(
             project_name=PROJECT_NAME,
@@ -372,8 +378,8 @@ def main():
             description=DESCRIPTION,
             config=sw_config,
         )
-    global_train_ds = sample.ImageDataset(f"{CIC_IOV2024_IMAGE_DATASET_PATH}/train")
-    global_test_ds = sample.ImageDataset(f"{CIC_IOV2024_IMAGE_DATASET_PATH}/test")
+    global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
+    global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
     clients, ratio_list = clientor.prepare_client_datasets(
         train_ds=global_train_ds,
         test_ds=global_test_ds,
