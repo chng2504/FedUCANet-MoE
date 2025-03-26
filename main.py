@@ -14,7 +14,7 @@ import argparse
 import random
 from typing import Dict, List
 import numpy as np
-import torch_npu
+# import torch_npu
 import clientor
 import aggregator
 
@@ -43,7 +43,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 10,
     "local_rounds": 3,
-    "learning_rate": 5e-5,
+    "learning_rate": 3e-5,
 }
 
 
