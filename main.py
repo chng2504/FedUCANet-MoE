@@ -41,7 +41,7 @@ sw_config = {
     "client_num": 20,
     "client_per_round": 5,
     "client_evaluate": 10,
-    "global_rounds": 10,
+    "global_rounds": 20,
     "local_rounds": 3,
     "learning_rate": 5e-5,
 }
@@ -442,7 +442,12 @@ def main():
 
     # ! 利用全局模型进行微调    
     logger.info("====[Finetune] Start Training...=====")
+    fed_acc_list = []
+    finetune_acc_list = []
     for client in clients:
+        # 先用联邦全局模型测试私有的数据集准确率
+        fed_acc = validate(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.test_ds, args.swanlab)
+        fed_acc_list.append(fed_acc)
         logger.info(f"Training Client {client.idx}...")
         client.model_local.load_state_dict(global_model.state_dict())
         train_finetune(
@@ -455,10 +460,13 @@ def main():
             args.swanlab,
         )
         client.model_local.load_state_dict(cur_weight)
-        validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+        fine_tune_acc = validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
+        finetune_acc_list.append(fine_tune_acc)
     logger.info("====[Finetune] Training Finished=====")
-    
-    
+
+
+
+    moe_acc_list = []
     logger.info("====[Mix] Start Training...=====")
     train_gate_only=False
     for client in clients:
@@ -474,9 +482,17 @@ def main():
             train_gate_only,
             args.swanlab,
         )
-        validate_mix(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.model_local, client.model_gate, client.test_ds, args.swanlab)
+        moe_acc = validate_mix(client.idx, GLOBAL_ACCELERATOR, client.model_global, client.model_local, client.model_gate, client.test_ds, args.swanlab)
+        moe_acc_list.append(moe_acc)
     logger.info("====[Mix] Training Finished=====")
-
+    
+    
+    fed_acc_list = np.array(fed_acc_list)
+    finetune_acc_list = np.array(finetune_acc_list)
+    moe_acc_list = np.array(moe_acc_list)
+    print(f'fedavg-acc-mean: {np.mean(fed_acc_list)}')
+    print(f'fine-une-acc: {np.mean(finetune_acc_list)}')
+    print(f'moe-acc-mean: {np.mean(moe_acc_list)}')
 
 if __name__ == "__main__":
     main()
