@@ -293,7 +293,7 @@ def validate(
                 }
             )
     accelerator.print(f"Validating - Loss: {avg_loss}, acc: {avg_acc}")
-    return avg_acc, avg_loss
+    return avg_acc
 
 
 def validate_mix(
@@ -355,7 +355,7 @@ def validate_mix(
                 }
             )
     accelerator.print(f"Validating Mix - Loss: {avg_loss}, acc: {avg_acc}")
-    return avg_acc, avg_loss
+    return avg_acc
 
 
 def main():
@@ -388,7 +388,6 @@ def main():
         client.create_models(sw_config.get("num_classes"))
 
     # 客户端字典：idx -> client
-    client_dict: Dict[int, clientor.Client] = {client.idx: client for client in clients}
     fed_global_model_weight = global_model.state_dict()
     logger.info("====[FedAvg] Start Training...=====")
     for round in range(sw_config.get("global_rounds")):
