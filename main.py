@@ -43,7 +43,7 @@ sw_config = {
     "client_evaluate": 10,
     "global_rounds": 10,
     "local_rounds": 3,
-    "learning_rate": 3e-5,
+    "learning_rate": 5e-5,
 }
 
 
@@ -100,8 +100,8 @@ def train_client(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-fed-train/{idx}-train_loss": train_loss,
-                    f"client-fed-train/{idx}-train_acc": avg_acc,
+                    f"client-fed-train-loss/{idx}-train_loss": train_loss,
+                    f"client-fed-train-acc/{idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -160,8 +160,8 @@ def train_finetune(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-finetune-train/{idx}-train_loss": epoch_loss,
-                    f"client-finetune-train/{idx}-train_acc": avg_acc,
+                    f"client-finetune-train-loss/{idx}-train_loss": epoch_loss,
+                    f"client-finetune-train-acc/{idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -248,8 +248,8 @@ def train_mix(
         if enable_swanlab:
             swanlab.log(
                 {
-                    f"client-mix-train/{idx}-train_loss": epoch_loss,
-                    f"client-mix-train/{idx}-train_acc": avg_acc,
+                    f"client-mix-train-loss/{idx}-train_loss": epoch_loss,
+                    f"client-mix-train-acc/{idx}-train_acc": avg_acc,
                 }
             )
         accelerator.print(
@@ -297,15 +297,15 @@ def validate(
         if idx != -1:
             swanlab.log(
                 {
-                    f"client-validate/{idx}-test_loss": avg_loss,
-                    f"client-validate/{idx}-test_acc": avg_acc,
+                    f"client-validate-loss/{idx}-test_loss": avg_loss,
+                    f"client-validate-acc/{idx}-test_acc": avg_acc,
                 }
             )
         else:
             swanlab.log(
                 {
-                    f"global/validate-test_loss": avg_loss,
-                    f"global/validate-test_acc": avg_acc,
+                    f"global/validate-loss": avg_loss,
+                    f"global/validate-acc": avg_acc,
                 }
             )
     accelerator.print(f"Validating - Loss: {avg_loss}, acc: {avg_acc}")
@@ -361,15 +361,15 @@ def validate_mix(
         if idx != -1:
             swanlab.log(
                 {
-                    f"client-mix-validate/{idx}-test_loss": avg_loss,
-                    f"client-mix-validate/{idx}-test_acc": avg_acc,
+                    f"client-mix-validate-loss/{idx}-test_loss": avg_loss,
+                    f"client-mix-validate-acc/{idx}-test_acc": avg_acc,
                 }
             )
         else:
             swanlab.log(
                 {
-                    f"global/mix-validate-test_loss": avg_loss,
-                    f"global/mix-validate-test_acc": avg_acc,
+                    f"global/mix-validate-loss": avg_loss,
+                    f"global/mix-validate-acc": avg_acc,
                 }
             )
     accelerator.print(f"Validating Mix - Loss: {avg_loss}, acc: {avg_acc}")
@@ -454,7 +454,7 @@ def main():
 
     logger.info("====[FedAvg] Training Finished=====")
 
-
+    logger.info("====[FedAvg] Evalualing global model...=====")
     validate(-1, GLOBAL_ACCELERATOR, global_model, global_test_ds, args.swanlab)
     
 
@@ -472,6 +472,7 @@ def main():
             sw_config.get("learning_rate"),
             args.swanlab,
         )
+        client.model_local.load_state_dict(cur_weight)
         validate(client.idx, GLOBAL_ACCELERATOR, client.model_local, client.test_ds, args.swanlab)
     logger.info("====[Finetune] Training Finished=====")
     
