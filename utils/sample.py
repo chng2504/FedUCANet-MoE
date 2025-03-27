@@ -1,14 +1,15 @@
+import os
+from collections import defaultdict
+from typing import Callable, Dict, List, Optional, Tuple
+
+import dotenv
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from typing import Optional, Callable, Tuple, List, Dict
-from collections import defaultdict
 from matplotlib.cm import get_cmap
-import pandas as pd
-import matplotlib.pyplot as plt
-import numpy as np
-import os
-import dotenv
 from torch.utils.data import DataLoader
 
 dotenv.load_dotenv()

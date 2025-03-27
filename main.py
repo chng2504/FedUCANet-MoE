@@ -1,23 +1,25 @@
-import torch
-from torchmetrics import Accuracy
+import argparse
+import os
+import random
+from datetime import datetime
+from typing import Dict, List
+
 import accelerate
 import dotenv
-import os
-from torch import nn, optim
-from models.mvn4 import MVN4TrimNet, GateTrimNet
-from torch.utils.data import DataLoader
-from utils import sample
-from tqdm import tqdm
-from loguru import logger
-import swanlab
-import argparse
-import random
-from typing import Dict, List
 import numpy as np
+import swanlab
+import torch
+from loguru import logger
+from torch import nn, optim
+from torch.utils.data import DataLoader
+from torchmetrics import Accuracy
+from tqdm import tqdm
 
-from datetime import datetime
-import clientor
 import aggregator
+import clientor
+from models.mvn4 import GateTrimNet, MVN4TrimNet
+from utils import sample
+from utils.refresh import clear_cache
 
 dotenv.load_dotenv()
 
@@ -457,12 +459,7 @@ def main():
 
         logger.info(f"Current Clients: {cur_client_idxeds}, Ratio: {cur_ratio_list}")
         for client in cur_clients:
-            if device == "npu":
-                torch_npu.npu.empty_cache()
-            elif device == "cuda":
-                torch.cuda.empty_cache()
-            else:
-                pass
+            clear_cache(device)
             logger.info(f"[FedAvg]Training Client {client.idx}...")
             cur_weight, _ = train_client(
                 client.idx,
@@ -491,6 +488,7 @@ def main():
     fed_acc_list = []
     finetune_acc_list = []
     for client in clients:
+        clear_cache(device)
         # 先用联邦全局模型测试私有的数据集准确率
         fed_acc = validate(
             client.idx,
@@ -526,6 +524,7 @@ def main():
     logger.info("====[MoE] Start Training...=====")
     train_gate_only = False
     for client in clients:
+        clear_cache(device)
         logger.info(f"[MoE]Training Client {client.idx}...")
         train_mix(
             client.idx,

@@ -1,8 +1,10 @@
-from typing import List, Dict
-import torch
-from models.mvn4 import MVN4TrimNet
-from loguru import logger
+from typing import Dict, List
+
 import numpy as np
+import torch
+from loguru import logger
+
+from models.mvn4 import MVN4TrimNet
 
 
 def FedAvg(

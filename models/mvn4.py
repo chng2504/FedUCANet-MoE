@@ -1,7 +1,7 @@
 from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 MODEL_SPECS = {
     "stage1": {"block_name": "convbn", "num_blocks": 1, "block_specs": [[3, 32, 3, 2]]},

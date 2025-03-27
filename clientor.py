@@ -1,13 +1,14 @@
-from torch.utils.data import DataLoader
-from torch import nn
-from utils import sample
 import os
-import dotenv
-from utils import sample
-from typing import List, Tuple
 from enum import Enum
+from typing import List, Tuple
+
+import dotenv
 import numpy as np
-from models.mvn4 import MVN4TrimNet, GateTrimNet
+from torch import nn
+from torch.utils.data import DataLoader
+
+from models.mvn4 import GateTrimNet, MVN4TrimNet
+from utils import sample
 
 dotenv.load_dotenv()
 

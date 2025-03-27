@@ -10,8 +10,15 @@ scikit-learn
 loguru
 tqdm
 dotenv
-ruff
-wandb
+
+# swanlab 太卡的话先用 wandb 替代
+#wandb
 
 # for Ascend Devices Only
 # torch-npu
+
+# linter
+ruff
+isort
+black
+
