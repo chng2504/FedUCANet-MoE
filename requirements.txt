@@ -10,6 +10,7 @@ scikit-learn
 loguru
 tqdm
 dotenv
+pyyaml
 
 # swanlab 太卡的话先用 wandb 替代
 #wandb

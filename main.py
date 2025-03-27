@@ -9,6 +9,7 @@ import dotenv
 import numpy as np
 import swanlab
 import torch
+import yaml
 from loguru import logger
 from torch import nn, optim
 from torch.utils.data import DataLoader
@@ -35,24 +36,18 @@ except ImportError:
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
 device = GLOBAL_ACCELERATOR.device
 
-PROJECT_NAME: str = "FL-MoE"
-EXPERIMENT_NAME: str = datetime.now().strftime("%Y-%m-%d")
-DESCRIPTION: str = "联邦MoE模型训练"
-sw_config = {
-    "batch_size": 128,
-    "device": GLOBAL_ACCELERATOR.device,
-    "num_clients": 10,
-    "num_classes": 6 if CUR_DATASET == "ciciov2024" else 5,
-    "num_workers": 8,
-    "cur_dataset": CUR_DATASET,
-    "client_num": 20,
-    "client_per_round": 5,
-    "client_evaluate": 10,
-    "global_rounds": 20,
-    "local_rounds": 3,
-    "learning_rate": 5e-5,
-    "out_ratio": 0.0,
-}
+
+def load_config(config_path: str = "config.yaml") -> dict:
+    with open(config_path, "r") as file:
+        config = yaml.safe_load(file)
+    return config
+
+
+CONFIG = load_config()
+PROJECT_NAME = CONFIG["project_name"]
+EXPERIMENT_NAME = datetime.now().strftime("%Y-%m-%d")
+DESCRIPTION = CONFIG["description"]
+sw_config = CONFIG["sw_config"]
 
 
 def train_client(
