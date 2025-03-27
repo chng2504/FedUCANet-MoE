@@ -427,14 +427,14 @@ def main():
         alpha=args.alpha,
     )
     train_fig.savefig(
-        f"{EXPERIMENT_NAME}-train-distribution.pdf",
+        f"temp/{EXPERIMENT_NAME}-train-distribution.pdf",
         format="pdf",
         dpi=600,
         bbox_inches="tight",
         pad_inches=0.05,
     )
     test_fig.savefig(
-        f"{EXPERIMENT_NAME}-test-distribution.pdf",
+        f"temp/{EXPERIMENT_NAME}-test-distribution.pdf",
         format="pdf",
         dpi=600,
         bbox_inches="tight",

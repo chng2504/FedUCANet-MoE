@@ -97,75 +97,250 @@ class FLDataPartitioner:
 
     def non_iid_split(
         self,
-        alpha: float = 0.5,
-        benign_ratio: float = 0.8,
-        minority_classes: List[str] = ["gas", "steering_wheel"],
-        min_samples: int = 1,
+        alpha: float = 1.0,
+        benign_ratio: float = 0.8,  # 保留正常类比例参数
+        min_samples: int = 20,  # 默认20个最小样本
     ) -> List[List[int]]:
         """
         Non-IID划分策略：
         - 使用分层Dirichlet分布控制数据偏斜
-        - 保证每个客户端包含足够多的正常样本
-        - 特殊处理小样本类别
+        - 保证每个客户端包含指定比例的正常样本
+        - 保证每个客户端至少有指定数量的样本
+        - 低alpha值时异常样本分布更加不均衡，高alpha值时更接近原始分布
+        - 不允许重复采样，一个样本只能分配给一个客户端
         """
         # 分离正常类和异常类
-        normal_indices = self.class_indices["benign"]
-        anomaly_indices = []
+        normal_indices = self.class_indices["benign"].copy()
+
+        # 将异常样本按类别分组
+        anomaly_class_indices = {}
         for cls in self.class_indices:
             if cls != "benign":
-                anomaly_indices.extend(self.class_indices[cls])
+                anomaly_class_indices[cls] = self.class_indices[cls].copy()
 
-        # 划分正常样本（使用更集中的分布）
-        normal_dist = self._dirichlet_split(normal_indices, alpha=alpha / 2)
+        # 所有异常样本的索引列表
+        all_anomaly_indices = []
+        for indices in anomaly_class_indices.values():
+            all_anomaly_indices.extend(indices)
 
-        # 划分异常样本（使用更均匀的分布）
-        anomaly_dist = self._dirichlet_split(anomaly_indices, alpha=alpha * 2)
+        # 确保有足够的样本支持min_samples要求
+        total_samples = len(normal_indices) + len(all_anomaly_indices)
+        required_samples = self.num_clients * min_samples
 
-        # 合并并保证最小样本量
-        client_indices = []
-        for n_idx, a_idx in zip(normal_dist, anomaly_dist):
-            combined = n_idx + a_idx
-            if len(combined) < min_samples:
-                # 补充随机样本
-                extra = np.random.choice(
-                    np.concatenate([normal_indices, anomaly_indices]),
-                    size=min_samples - len(combined),
-                    replace=False,
+        if total_samples < required_samples:
+            min_samples = max(1, total_samples // self.num_clients)
+
+        # 划分正常样本
+        normal_dist = self._dirichlet_split_no_repeat(normal_indices, alpha=alpha * 2)
+
+        # 异常类别分布方式取决于alpha值
+        anomaly_dists = {}
+
+        if alpha < 0.5:  # 低alpha值时，基于类别独立划分，产生更不均衡的分布
+            # 对每个异常类别单独进行狄利克雷划分
+            for cls, indices in anomaly_class_indices.items():
+                # 使用更小的alpha值使分布更不均衡
+                cls_alpha = max(0.1, alpha / 4)  # 确保alpha不会太小导致数值问题
+                anomaly_dists[cls] = self._dirichlet_split_no_repeat(
+                    indices, alpha=cls_alpha
                 )
-                combined.extend(extra)
+
+            # 合并每个客户端的各类异常样本
+            anomaly_dist = [[] for _ in range(self.num_clients)]
+            for cls_dist in anomaly_dists.values():
+                for i, indices in enumerate(cls_dist):
+                    anomaly_dist[i].extend(indices)
+        else:  # 高alpha值时，整体划分所有异常样本
+            # 使用较大的alpha值使分布更均衡
+            anomaly_dist = self._dirichlet_split_no_repeat(
+                all_anomaly_indices, alpha=alpha * 2
+            )
+
+        # 合并并控制正常样本比例，同时保证最小样本量
+        client_indices = []
+
+        # 跟踪未分配的样本
+        unused_normal = normal_indices.copy()
+        for nd in normal_dist:
+            for idx in nd:
+                if idx in unused_normal:
+                    unused_normal.remove(idx)
+
+        unused_anomaly = all_anomaly_indices.copy()
+        for ad in anomaly_dist:
+            for idx in ad:
+                if idx in unused_anomaly:
+                    unused_anomaly.remove(idx)
+
+        for i, (n_idx, a_idx) in enumerate(zip(normal_dist, anomaly_dist)):
+            # 计算目标正常样本数量，确保符合benign_ratio
+            total_samples = len(n_idx) + len(a_idx)
+            target_normal = int(total_samples * benign_ratio)
+
+            combined = []
+
+            # 调整正常样本数量
+            if len(n_idx) > target_normal:
+                # 正常样本过多，移除一部分
+                np.random.shuffle(n_idx)
+                removed = n_idx[target_normal:]
+                unused_normal.extend(removed)
+                n_idx = n_idx[:target_normal]
+
+            combined.extend(n_idx)
+            combined.extend(a_idx)
+
+            # 确保最小样本数
+            if len(combined) < min_samples:
+                samples_needed = min_samples - len(combined)
+
+                # 优先使用未分配的正常样本和异常样本
+                available_samples = unused_normal + unused_anomaly
+                if len(available_samples) >= samples_needed:
+                    np.random.shuffle(available_samples)
+                    extra_indices = available_samples[:samples_needed]
+
+                    # 从未分配列表中移除
+                    for idx in extra_indices:
+                        if idx in unused_normal:
+                            unused_normal.remove(idx)
+                        elif idx in unused_anomaly:
+                            unused_anomaly.remove(idx)
+
+                    combined.extend(extra_indices)
+                else:
+                    # 如果没有足够的未分配样本，则尽可能多地添加
+                    combined.extend(available_samples)
+                    unused_normal.clear()
+                    unused_anomaly.clear()
+
+            # 随机打乱顺序
             np.random.shuffle(combined)
             client_indices.append(combined)
 
-        # 处理小样本类别：确保出现在足够多的客户端
-        for minority_cls in minority_classes:
-            if minority_cls in self.class_indices:
-                cls_indices = self.class_indices[minority_cls]
-                target_clients = np.random.choice(
-                    self.num_clients,
-                    size=int(self.num_clients * 0.3),  # 至少出现在30%的客户端
-                    replace=False,
-                )
-                for client_id in target_clients:
-                    client_indices[client_id].extend(cls_indices)
-
         return client_indices
 
-    def _dirichlet_split(self, indices: List[int], alpha: float) -> List[List[int]]:
-        """基于Dirichlet分布的样本划分"""
+    def _dirichlet_split_no_repeat(
+        self, indices: List[int], alpha: float
+    ) -> List[List[int]]:
+        """基于Dirichlet分布的样本划分，不允许重复采样"""
         if not indices:
             return [[] for _ in range(self.num_clients)]
 
+        indices = indices.copy()
+        np.random.shuffle(indices)
+
         # 生成分配比例矩阵
         proportions = np.random.dirichlet(np.repeat(alpha, self.num_clients))
-        proportions /= np.sum(proportions)
 
-        # 计算分配数量
+        # 调整比例以匹配实际样本数
         num_samples = len(indices)
-        allocations = (np.cumsum(proportions) * num_samples).astype(int)[:-1]
-        split_indices = np.split(np.random.permutation(indices), allocations)
+        allocation_sizes = np.round(proportions * num_samples).astype(int)
 
-        # 填充结果
-        return [list(indices) for indices in split_indices]
+        # 确保总分配数等于样本数
+        diff = num_samples - np.sum(allocation_sizes)
+        if diff > 0:
+            # 随机选择客户端增加样本
+            indices_to_add = np.random.choice(
+                self.num_clients, size=diff, replace=False
+            )
+            for idx in indices_to_add:
+                allocation_sizes[idx] += 1
+        elif diff < 0:
+            # 随机选择客户端减少样本，确保不为负
+            while diff < 0:
+                valid_indices = np.where(allocation_sizes > 0)[0]
+                idx = np.random.choice(valid_indices)
+                allocation_sizes[idx] -= 1
+                diff += 1
+
+        # 分配样本
+        result = []
+        start_idx = 0
+        for size in allocation_sizes:
+            if start_idx + size <= len(indices):
+                result.append(indices[start_idx : start_idx + size])
+                start_idx += size
+            else:
+                result.append(indices[start_idx:])
+
+        # 如果客户端数量多于能分配的组数，添加空列表
+        while len(result) < self.num_clients:
+            result.append([])
+
+        return result
+
+    # def non_iid_split(
+    #     self,
+    #     alpha: float = 0.5,
+    #     benign_ratio: float = 0.8,
+    #     minority_classes: List[str] = ["gas", "steering_wheel"],
+    #     min_samples: int = 20,
+    # ) -> List[List[int]]:
+    #     """
+    #     Non-IID划分策略：
+    #     - 使用分层Dirichlet分布控制数据偏斜
+    #     - 保证每个客户端包含足够多的正常样本
+    #     - 特殊处理小样本类别
+    #     """
+    #     # 分离正常类和异常类
+    #     normal_indices = self.class_indices["benign"]
+    #     anomaly_indices = []
+    #     for cls in self.class_indices:
+    #         if cls != "benign":
+    #             anomaly_indices.extend(self.class_indices[cls])
+
+    #     # 划分正常样本（使用更集中的分布）
+    #     normal_dist = self._dirichlet_split(normal_indices, alpha=alpha / 2)
+
+    #     # 划分异常样本（使用更均匀的分布）
+    #     anomaly_dist = self._dirichlet_split(anomaly_indices, alpha=alpha * 2)
+
+    #     # 合并并保证最小样本量
+    #     client_indices = []
+    #     for n_idx, a_idx in zip(normal_dist, anomaly_dist):
+    #         combined = n_idx + a_idx
+    #         if len(combined) < min_samples:
+    #             # 补充随机样本
+    #             extra = np.random.choice(
+    #                 np.concatenate([normal_indices, anomaly_indices]),
+    #                 size=min_samples - len(combined),
+    #                 replace=False,
+    #             )
+    #             combined.extend(extra)
+    #         np.random.shuffle(combined)
+    #         client_indices.append(combined)
+
+    #     # 处理小样本类别：确保出现在足够多的客户端
+    #     for minority_cls in minority_classes:
+    #         if minority_cls in self.class_indices:
+    #             cls_indices = self.class_indices[minority_cls]
+    #             target_clients = np.random.choice(
+    #                 self.num_clients,
+    #                 size=int(self.num_clients * 0.3),  # 至少出现在30%的客户端
+    #                 replace=False,
+    #             )
+    #             for client_id in target_clients:
+    #                 client_indices[client_id].extend(cls_indices)
+
+    #     return client_indices
+
+    # def _dirichlet_split(self, indices: List[int], alpha: float) -> List[List[int]]:
+    #     """基于Dirichlet分布的样本划分"""
+    #     if not indices:
+    #         return [[] for _ in range(self.num_clients)]
+
+    #     # 生成分配比例矩阵
+    #     proportions = np.random.dirichlet(np.repeat(alpha, self.num_clients))
+    #     proportions /= np.sum(proportions)
+
+    #     # 计算分配数量
+    #     num_samples = len(indices)
+    #     allocations = (np.cumsum(proportions) * num_samples).astype(int)[:-1]
+    #     split_indices = np.split(np.random.permutation(indices), allocations)
+
+    #     # 填充结果
+    #     return [list(indices) for indices in split_indices]
 
     def print_distribution(
         self, client_indices: List[List[int]], enable_benign: bool = False
