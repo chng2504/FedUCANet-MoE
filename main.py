@@ -404,10 +404,14 @@ def main():
     sw_config["iid"] = args.iid
     if args.iid:
         cur_split_type = clientor.SplitType.IID
-        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
+        EXPERIMENT_NAME: str = (
+            f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
+        )
     else:
         cur_split_type = clientor.SplitType.NON_IID
-        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
+        EXPERIMENT_NAME: str = (
+            f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
+        )
     logger.info(EXPERIMENT_NAME)
     if args.swanlab:
         swanlab.init(
@@ -545,6 +549,24 @@ def main():
         finetune_acc_list.append(fine_tune_acc)
     logger.info("====[Finetune] Training Finished=====")
 
+    if args.moe_global:
+        finetune_acc_global_list = []
+        logger.info("====[Finetune] Evalualing global model on global test set...=====")
+        for client in clients:
+            clear_cache(device)
+            finetune_acc_global = validate(
+                client.idx,
+                GLOBAL_ACCELERATOR,
+                client.model_local,
+                global_test_ds,
+                args.swanlab,
+            )
+            finetune_acc_global_list.append(finetune_acc_global)
+        logger.info(
+            "====[Finetune] Evalualing global model on global test set Finished====="
+        )
+        finetune_acc_global_list = np.array(finetune_acc_global_list)
+
     moe_acc_list = []
     logger.info("====[MoE] Start Training...=====")
     train_gate_only = False
@@ -602,6 +624,7 @@ def main():
     print(f"fine-une-acc: {np.mean(finetune_acc_list)}")
     print(f"moe-acc-mean: {np.mean(moe_acc_list)}")
     if args.moe_global:
+        print(f"finetune-acc-global-mean: {np.mean(finetune_acc_global_list)}")
         print(f"moe-last-acc-mean: {np.mean(moe_last_acc_list)}")
 
 
