@@ -383,6 +383,7 @@ def main():
     parser.add_argument("--out_ratio", type=float, default=0)
     parser.add_argument("--moe_global", type=bool, default=True)
     parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--iid", type=bool, default=False)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
     sw_config["cur_dataset"] = CUR_DATASET
@@ -400,10 +401,13 @@ def main():
         sw_config["num_classes"] = 5
     else:
         raise ValueError("no current dataset")
-
-    EXPERIMENT_NAME: str = (
-        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
-    )
+    sw_config["iid"] = args.iid
+    if args.iid:
+        cur_split_type = clientor.SplitType.IID
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
+    else:
+        cur_split_type = clientor.SplitType.NON_IID
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
     logger.info(EXPERIMENT_NAME)
     if args.swanlab:
         swanlab.init(
@@ -418,7 +422,7 @@ def main():
         train_ds=global_train_ds,
         test_ds=global_test_ds,
         client_num=20,
-        split_type=clientor.SplitType.NON_IID,
+        split_type=cur_split_type,
         global_rate=0.5,
         alpha=args.alpha,
     )

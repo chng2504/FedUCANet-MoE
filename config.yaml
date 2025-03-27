@@ -19,4 +19,5 @@ sw_config:
 
     # 其他参数
     out_ratio: 0.0
+    iid: False # 是否独立同分布
     alpha: 1.0 # 非独立同分布参数
