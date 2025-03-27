@@ -1,0 +1,16 @@
+swanlab
+accelerate
+torchmetrics
+torch
+torchvision
+numpy<2
+pandas
+matplotlib
+scikit-learn
+loguru
+tqdm
+dotenv
+ruff
+
+# for Ascend Devices Only
+# torch-npu

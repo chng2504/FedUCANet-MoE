@@ -1,5 +1,5 @@
 import torch
-from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+from torchmetrics import Accuracy
 import accelerate
 import dotenv
 import os
@@ -15,7 +15,6 @@ import random
 from typing import Dict, List
 import numpy as np
 
-# import torch_npu
 import clientor
 import aggregator
 
@@ -25,6 +24,10 @@ CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
 CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
 CUR_DATASET = "ciciov2024"
 
+try:
+    import torch_npu  # For Ascend Devices Only
+except ImportError:
+    pass
 
 GLOBAL_ACCELERATOR = accelerate.Accelerator()
 device = GLOBAL_ACCELERATOR.device
@@ -66,16 +69,16 @@ def train_client(
         shuffle=True,
         num_workers=sw_config.get("num_workers"),
     )
-    model, optimizer, train_loader, criterion = accelerator.prepare(
-        model, optimizer, train_loader, criterion
+    acc_metric = Accuracy(task="multiclass", num_classes=sw_config.get("num_classes"))
+    model, optimizer, train_loader, criterion, acc_metric = accelerator.prepare(
+        model, optimizer, train_loader, criterion, acc_metric
     )
 
     model_best = model.state_dict()
     train_acc_best = 0.0
     for epoch in range(epochs):
+        acc_metric.reset()
         total_loss = 0.0
-        y_true = []
-        y_pred = []
         for images, labels in tqdm(
             train_loader, desc=f"Client {client_idx} - Epoch [{epoch + 1}/{epochs}]"
         ):
@@ -91,13 +94,9 @@ def train_client(
             total_loss += loss.item()
 
             _, predicted = torch.max(outputs, 1)
-            cur_pred = predicted.cpu().numpy()
-            cur_label = labels.cpu().numpy()
-            y_true.extend(cur_label)
-            y_pred.extend(cur_pred)
-
+            acc_metric.update(predicted, labels)
         train_loss = total_loss / len(train_loader)
-        avg_acc = accuracy_score(y_true, y_pred)
+        avg_acc = acc_metric.compute()
         if enable_swanlab:
             swanlab.log(
                 {
@@ -132,14 +131,14 @@ def train_finetune(
         shuffle=True,
         num_workers=sw_config.get("num_workers"),
     )
-    model, optimizer, train_loader, criterion = accelerator.prepare(
-        model, optimizer, train_loader, criterion
+    acc_metric = Accuracy(task="multiclass", num_classes=sw_config.get("num_classes"))
+    model, optimizer, train_loader, criterion, acc_metric = accelerator.prepare(
+        model, optimizer, train_loader, criterion, acc_metric
     )
 
     train_acc_best = 0.0
     for epoch in range(local_epochs):
-        y_true = []
-        y_pred = []
+        acc_metric.reset()
         total_loss = 0.0
         for images, labels in tqdm(
             train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"
@@ -151,12 +150,9 @@ def train_finetune(
             optimizer.step()
             total_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
-            cur_pred = predicted.cpu().numpy()
-            cur_label = labels.cpu().numpy()
-            y_true.extend(cur_label)
-            y_pred.extend(cur_pred)
+            acc_metric.update(predicted, labels)
         epoch_loss = total_loss / len(train_loader)
-        avg_acc = accuracy_score(y_true, y_pred)
+        avg_acc = acc_metric.compute()
         if enable_swanlab:
             swanlab.log(
                 {
@@ -205,15 +201,27 @@ def train_mix(
         shuffle=True,
         num_workers=sw_config.get("num_workers"),
     )
-    model_global, model_local, model_gate, optimizer, train_loader, criterion = (
-        accelerator.prepare(
-            model_global, model_local, model_gate, optimizer, train_loader, criterion
-        )
+    acc_metric = Accuracy(task="multiclass", num_classes=sw_config.get("num_classes"))
+    (
+        model_global,
+        model_local,
+        model_gate,
+        optimizer,
+        train_loader,
+        criterion,
+        acc_metric,
+    ) = accelerator.prepare(
+        model_global,
+        model_local,
+        model_gate,
+        optimizer,
+        train_loader,
+        criterion,
+        acc_metric,
     )
     for epoch in range(local_epochs):
+        acc_metric.reset()
         total_loss = 0.0
-        y_true = []
-        y_pred = []
         for images, labels in tqdm(
             train_loader, desc=f"Epoch [{epoch + 1}/{local_epochs}]"
         ):
@@ -233,13 +241,10 @@ def train_mix(
 
             total_loss += loss.item()
 
-            cur_pred = log_probs.argmax(dim=1).cpu().numpy()
-            cur_label = labels.cpu().numpy()
-            y_true.extend(cur_label)
-            y_pred.extend(cur_pred)
-
+            predicted = log_probs.argmax(dim=1)
+            acc_metric.update(predicted, labels)
         epoch_loss = total_loss / len(train_loader)
-        avg_acc = accuracy_score(y_true, y_pred)
+        avg_acc = acc_metric.compute()
         if enable_swanlab:
             swanlab.log(
                 {
@@ -261,8 +266,7 @@ def validate(
 ):
     model.eval()
     criterion = nn.CrossEntropyLoss()
-    y_true = []
-    y_pred = []
+    acc_metric = Accuracy(task="multiclass", num_classes=sw_config.get("num_classes"))
     total_loss = 0.0
     test_loader = DataLoader(
         test_ds,
@@ -270,18 +274,17 @@ def validate(
         shuffle=False,
         num_workers=sw_config.get("num_workers"),
     )
-    model, test_loader, criterion = accelerator.prepare(model, test_loader, criterion)
+    model, test_loader, criterion, acc_metric = accelerator.prepare(
+        model, test_loader, criterion, acc_metric
+    )
     with torch.no_grad():
         for images, labels in tqdm(test_loader, desc="Validating Single"):
             outputs = model(images)
             loss = criterion(outputs, labels)
             total_loss += loss.item()
             _, predicted = torch.max(outputs, 1)
-            cur_pred = predicted.cpu().numpy()
-            cur_label = labels.cpu().numpy()
-            y_true.extend(cur_label)
-            y_pred.extend(cur_pred)
-    avg_acc = accuracy_score(y_true, y_pred)
+            acc_metric.update(predicted, labels)
+    avg_acc = acc_metric.compute()
     avg_loss = total_loss / len(test_loader)
     if enable_swanlab:
         if client_idx != -1:
@@ -316,8 +319,7 @@ def validate_mix(
     model_gate.eval()
 
     criterion = nn.CrossEntropyLoss()
-    y_true = []
-    y_pred = []
+    acc_metric = Accuracy(task="multiclass", num_classes=sw_config.get("num_classes"))
     total_loss = 0.0
     test_loader = DataLoader(
         test_ds,
@@ -325,8 +327,10 @@ def validate_mix(
         shuffle=False,
         num_workers=sw_config.get("num_workers"),
     )
-    model_local, model_global, model_gate, test_loader, criterion = accelerator.prepare(
-        model_local, model_global, model_gate, test_loader, criterion
+    model_local, model_global, model_gate, test_loader, criterion, acc_metric = (
+        accelerator.prepare(
+            model_local, model_global, model_gate, test_loader, criterion, acc_metric
+        )
     )
     with torch.no_grad():
         for images, labels in tqdm(test_loader, desc="Validating Mix"):
@@ -338,13 +342,10 @@ def validate_mix(
             loss = criterion(log_probs, labels)
             total_loss += loss.item()
 
-            cur_pred = log_probs.argmax(dim=1).cpu().numpy()
-            cur_label = labels.cpu().numpy()
-            y_true.extend(cur_label)
-            y_pred.extend(cur_pred)
-
+            predicted = log_probs.argmax(dim=1)
+            acc_metric.update(predicted, labels)
     avg_loss = total_loss / len(test_loader)
-    avg_acc = accuracy_score(y_true, y_pred)
+    avg_acc = acc_metric.compute()
     if enable_swanlab:
         if client_idx != -1:
             swanlab.log(
@@ -386,7 +387,7 @@ def main():
         )
     global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
     global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
-    clients, ratio_list = clientor.prepare_client_datasets(
+    clients, _ = clientor.prepare_client_datasets(
         train_ds=global_train_ds,
         test_ds=global_test_ds,
         client_num=20,
