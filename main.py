@@ -48,6 +48,7 @@ sw_config = {
     "global_rounds": 15,
     "local_rounds": 3,
     "learning_rate": 5e-5,
+    "out_ratio": 0.0
 }
 
 
@@ -379,6 +380,7 @@ def main():
         DS_PATH = CAR_HACKING_IMAGE_DATASET_PATH
     else:
         raise ValueError("no current dataset")
+    sw_config['out_ratio'] = args.out_ratio
 
     if args.swanlab:
         swanlab.init(
