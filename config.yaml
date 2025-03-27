@@ -19,3 +19,4 @@ sw_config:
 
     # 其他参数
     out_ratio: 0.0
+    alpha: 1.0 # 非独立同分布参数

@@ -9,7 +9,6 @@ import pandas as pd
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
-from matplotlib.cm import get_cmap
 from torch.utils.data import DataLoader
 
 dotenv.load_dotenv()
@@ -189,16 +188,15 @@ class FLDataPartitioner:
         figsize=(16, 8),
         title: str = "Client Data Distribution",
     ) -> plt.Figure:
-        """可视化各客户端的数据分布（多色条形图版）"""
+        """可视化各客户端的数据分布（Seaborn样式的堆叠条形图）"""
         # 获取所有类别列表
-        all_classes = list(self.class_to_idx.keys())
+        all_classes = [cls for cls in list(self.class_to_idx.keys()) if cls != "benign"]
 
         # 收集每个客户端的数据分布
         client_data = []
         for client_id, indices in enumerate(client_indices):
             class_counts = defaultdict(int)
             for idx in indices:
-                # skip benign
                 _, class_idx = self.dataset.samples[idx]
                 class_name = self.idx_to_class[class_idx]
                 if class_name == "benign":
@@ -206,49 +204,48 @@ class FLDataPartitioner:
                 class_counts[class_name] += 1
 
             # 填充所有类别的计数（包括0值的类别）
-            # skip benign
-            counts = {
-                cls: class_counts.get(cls, 0) for cls in all_classes if cls != "benign"
-            }
+            counts = {cls: class_counts.get(cls, 0) for cls in all_classes}
             counts["client"] = f"Client {client_id}"
             client_data.append(counts)
 
-        # 转换为DataFrame
+        # 转换为DataFrame (宽格式数据)
         df = pd.DataFrame(client_data).set_index("client")
 
-        # 创建颜色映射
-        colormap = get_cmap("tab20")
-        colors = [colormap(i % 20) for i in range(len(all_classes))]
-
-        # 创建堆叠条形图
+        # 创建图形
         plt.figure(figsize=figsize)
+
+        # 使用Matplotlib创建堆叠条形图，但带有Seaborn样式
         ax = df.plot.bar(
-            stacked=True, color=colors, width=0.8, edgecolor="white", linewidth=0.5
+            stacked=True,
+            colormap="tab20",
+            width=0.8,
+            edgecolor="white",
+            linewidth=0.5,
         )
 
         # 设置图形参数
-        plt.title(title, fontsize=14, pad=20)
-        plt.xlabel("Client ID", fontsize=12, labelpad=10)
-        plt.xlabel("")
-        plt.ylabel("Count", fontsize=12, labelpad=10)
+        plt.title(title, fontsize=12, fontweight="semibold")
+        plt.xlabel("", fontsize=12, labelpad=10)  # 移除x轴标签
+        plt.ylabel("Count", fontsize=11, fontweight="semibold")
         plt.xticks(rotation=45, ha="right", fontsize=10)
         plt.yticks(fontsize=10)
+
+        # 只保留横向网格线，移除竖向网格线
+        ax.grid(axis="y", linestyle="--", alpha=0.7)
+        ax.grid(axis="x", visible=False)
 
         # 调整图例
         handles, labels = ax.get_legend_handles_labels()
         plt.legend(
-            # reversed(handles),
-            # reversed(labels),
-            # title="Classes",
-            # bbox_to_anchor=(1.05, 1),
-            # loc="upper left",
             fontsize=8,
             title_fontsize=10,
+            frameon=True,
+            framealpha=0.9,
+            edgecolor="lightgray",
         )
 
         # 调整布局
         plt.tight_layout()
-        plt.grid(axis="y", alpha=0.3)
         return plt
 
 

@@ -382,9 +382,11 @@ def main():
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
     parser.add_argument("--moe_global", type=bool, default=True)
+    parser.add_argument("--alpha", type=float, default=1.0)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
     sw_config["cur_dataset"] = CUR_DATASET
+    sw_config["alpha"] = args.alpha
     if CUR_DATASET == "ciciov2024":
         DS_PATH = CIC_IOV2024_IMAGE_DATASET_PATH
     elif CUR_DATASET == "carhacking":
@@ -400,7 +402,7 @@ def main():
         raise ValueError("no current dataset")
 
     EXPERIMENT_NAME: str = (
-        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-({args.out_ratio})"
+        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
     )
     logger.info(EXPERIMENT_NAME)
     if args.swanlab:
@@ -418,6 +420,7 @@ def main():
         client_num=20,
         split_type=clientor.SplitType.NON_IID,
         global_rate=0.5,
+        alpha=args.alpha,
     )
     train_fig.savefig(
         f"{EXPERIMENT_NAME}-train-distribution.pdf",
@@ -433,6 +436,7 @@ def main():
         bbox_inches="tight",
         pad_inches=0.05,
     )
+
     if args.swanlab:
         swanlab.log(
             {
