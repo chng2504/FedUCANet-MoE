@@ -13,9 +13,9 @@ sw_config:
     client_num: 20
     client_per_round: 5
     client_evaluate: 10
-    global_rounds: 15
+    global_rounds: 20
     local_rounds: 3
-    learning_rate: 0.00005  # 5e-5
+    learning_rate: 0.00003  # 3e-5
 
     # 其他参数
     out_ratio: 0.0

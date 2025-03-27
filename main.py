@@ -381,7 +381,7 @@ def main():
     parser.add_argument("--swanlab", type=bool, default=False)
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
-    parser.add_argument("--moe_global", type=bool, default=False)
+    parser.add_argument("--moe_global", type=bool, default=True)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
     sw_config["cur_dataset"] = CUR_DATASET
