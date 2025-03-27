@@ -101,7 +101,7 @@ class FLDataPartitioner:
         alpha: float = 0.5,
         benign_ratio: float = 0.8,
         minority_classes: List[str] = ["gas", "steering_wheel"],
-        min_samples: int = 15,
+        min_samples: int = 1,
     ) -> List[List[int]]:
         """
         Non-IID划分策略：
@@ -188,7 +188,7 @@ class FLDataPartitioner:
         client_indices: List[List[int]],
         figsize=(16, 8),
         title: str = "Client Data Distribution",
-    ):
+    ) -> plt.Figure:
         """可视化各客户端的数据分布（多色条形图版）"""
         # 获取所有类别列表
         all_classes = list(self.class_to_idx.keys())
@@ -229,18 +229,19 @@ class FLDataPartitioner:
         # 设置图形参数
         plt.title(title, fontsize=14, pad=20)
         plt.xlabel("Client ID", fontsize=12, labelpad=10)
-        plt.ylabel("Sample Count", fontsize=12, labelpad=10)
+        plt.xlabel("")
+        plt.ylabel("Count", fontsize=12, labelpad=10)
         plt.xticks(rotation=45, ha="right", fontsize=10)
         plt.yticks(fontsize=10)
 
         # 调整图例
         handles, labels = ax.get_legend_handles_labels()
         plt.legend(
-            reversed(handles),
-            reversed(labels),
-            title="Classes",
-            bbox_to_anchor=(1.05, 1),
-            loc="upper left",
+            # reversed(handles),
+            # reversed(labels),
+            # title="Classes",
+            # bbox_to_anchor=(1.05, 1),
+            # loc="upper left",
             fontsize=8,
             title_fontsize=10,
         )
@@ -248,7 +249,7 @@ class FLDataPartitioner:
         # 调整布局
         plt.tight_layout()
         plt.grid(axis="y", alpha=0.3)
-        plt.show()
+        return plt
 
 
 class ClientDataset(torch.utils.data.Dataset):

@@ -173,3 +173,5 @@ ge_check_op.json
 test/*
 
 .ruff_cache*
+
+*.pdf

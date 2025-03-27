@@ -412,13 +412,34 @@ def main():
         )
     global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
     global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
-    clients, _ = clientor.prepare_client_datasets(
+    clients, _, train_fig, test_fig = clientor.prepare_client_datasets(
         train_ds=global_train_ds,
         test_ds=global_test_ds,
         client_num=20,
         split_type=clientor.SplitType.NON_IID,
         global_rate=0.5,
     )
+    train_fig.savefig(
+        f"{EXPERIMENT_NAME}-train-distribution.pdf",
+        format="pdf",
+        dpi=600,
+        bbox_inches="tight",
+        pad_inches=0.05,
+    )
+    test_fig.savefig(
+        f"{EXPERIMENT_NAME}-test-distribution.pdf",
+        format="pdf",
+        dpi=600,
+        bbox_inches="tight",
+        pad_inches=0.05,
+    )
+    if args.swanlab:
+        swanlab.log(
+            {
+                "train_distribution": swanlab.Image(train_fig),
+                "test_distribution": swanlab.Image(test_fig),
+            }
+        )
 
     global_model = MVN4TrimNet(num_classes=sw_config.get("num_classes"))
 

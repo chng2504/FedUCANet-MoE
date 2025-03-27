@@ -3,6 +3,7 @@ from enum import Enum
 from typing import List, Tuple
 
 import dotenv
+import matplotlib.pyplot as plt
 import numpy as np
 from torch import nn
 from torch.utils.data import DataLoader
@@ -62,7 +63,7 @@ def prepare_client_datasets(
     global_rate: float = 0.5,
     alpha: float = 1.0,  # Dirchlet 采样值
     split_type: SplitType = SplitType.NON_IID,
-) -> Tuple[List[Client], np.ndarray]:
+) -> Tuple[List[Client], np.ndarray, plt.Figure, plt.Figure]:
     train_partitioner = sample.FLDataPartitioner(train_ds, client_num)
     if split_type == SplitType.IID:
         client_train_indices = train_partitioner.iid_split()
@@ -72,6 +73,13 @@ def prepare_client_datasets(
         sample.ClientDataset(train_ds, client_train_indices[i])
         for i in range(client_num)
     ]
+    print("Train_Distribution:")
+    train_partitioner.print_distribution(client_train_indices)
+    plt.figure(1)
+    train_plt = train_partitioner.visualize_distribution_plot(
+        client_train_indices, title="Train/Distribution"
+    )
+    train_fig = train_plt.gcf()
 
     test_partitioner = sample.FLDataPartitioner(test_ds, client_num)
     if split_type == SplitType.IID:
@@ -81,7 +89,13 @@ def prepare_client_datasets(
     client_test_datasets: List[sample.ClientDataset] = [
         sample.ClientDataset(test_ds, client_test_indices[i]) for i in range(client_num)
     ]
-
+    print("Test_Distribution:")
+    test_partitioner.print_distribution(client_test_indices)
+    plt.figure(2)
+    test_plt = test_partitioner.visualize_distribution_plot(
+        client_test_indices, title="Test/Distribution"
+    )
+    test_fig = test_plt.gcf()
     clients: List[Client] = []
     ratio_list: np.ndarray = np.zeros(client_num)
     for i in range(client_num):
@@ -94,4 +108,4 @@ def prepare_client_datasets(
         clients.append(client)
         ratio_list[i] = len(client.global_ds) / len(client.train_ds)
 
-    return clients, ratio_list
+    return clients, ratio_list, train_fig, test_fig
