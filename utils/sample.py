@@ -10,12 +10,14 @@ import numpy as np
 import os
 import dotenv
 from torch.utils.data import DataLoader
+
 dotenv.load_dotenv()
 
 DEFAULT_IMAGE_SIZE = 224
 
 CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
 CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
+
 
 class ImageDataset(datasets.ImageFolder):
     def __init__(self, root: str, transform: Optional[Callable] = None):
@@ -261,14 +263,14 @@ class ClientDataset(torch.utils.data.Dataset):
 
     def __len__(self):
         return len(self.client_indices)
-    
-        
+
     def get_paths_labels(self):
         """获取当前客户端所有样本的路径和标签"""
         return [
             (self.original_dataset.samples[i][0], self.original_dataset.targets[i])
             for i in self.client_indices
         ]
+
     def print_distribution(self):
         """显示当前客户端数据集中各个类别的分布情况"""
         # 收集每个类别的样本数量
@@ -276,45 +278,44 @@ class ClientDataset(torch.utils.data.Dataset):
         for target in self.targets:
             class_name = self.original_dataset.idx_to_class[target]
             class_counts[class_name] += 1
-        
+
         # 计算总样本数
         total_samples = len(self.targets)
-        
+
         # 打印分布信息
         print(f"数据集样本总数: {total_samples}")
         print("各类别样本分布:")
-        for cls, count in sorted(class_counts.items(), key=lambda x: x[1], reverse=True):
+        for cls, count in sorted(
+            class_counts.items(), key=lambda x: x[1], reverse=True
+        ):
             percentage = (count / total_samples) * 100
             print(f"  {cls}: {count} 样本 ({percentage:.2f}%)")
 
-        
-        
-        
     def split(self, ratio: float) -> Tuple["ClientDataset", "ClientDataset"]:
         # 按类别收集索引
         class_indices = defaultdict(list)
         for idx, target in enumerate(self.targets):
             class_indices[target].append(self.client_indices[idx])
-            
+
         first_indices = []
         second_indices = []
-        
+
         # 对每个类别进行分割
         for class_idx, indices in class_indices.items():
             n_samples = len(indices)
             n_first = int(n_samples * ratio)
-            
+
             # 随机打乱当前类别的索引
             shuffled_indices = np.random.permutation(indices)
-            
+
             # 分配到两个子集
             first_indices.extend(shuffled_indices[:n_first])
             second_indices.extend(shuffled_indices[n_first:])
-        
+
         # 创建新的 ClientDataset 实例
         return (
             ClientDataset(self.original_dataset, first_indices),
-            ClientDataset(self.original_dataset, second_indices)
+            ClientDataset(self.original_dataset, second_indices),
         )
 
 
@@ -324,13 +325,12 @@ if __name__ == "__main__":
 
     partitioner = FLDataPartitioner(train_ds, client_num)
     client_indices = partitioner.non_iid_split(alpha=1.0)
-    
-    client_datasets = [ClientDataset(train_ds, client_indices[i]) for i in range(client_num)]
+
+    client_datasets = [
+        ClientDataset(train_ds, client_indices[i]) for i in range(client_num)
+    ]
 
     client_dataloaders = [
         DataLoader(client_datasets[i], batch_size=128, shuffle=True)
         for i in range(client_num)
     ]
-
-    
-

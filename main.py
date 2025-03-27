@@ -45,9 +45,9 @@ sw_config = {
     "client_num": 20,
     "client_per_round": 5,
     "client_evaluate": 10,
-    "global_rounds": 20,
+    "global_rounds": 15,
     "local_rounds": 3,
-    "learning_rate": 4e-5,
+    "learning_rate": 5e-5,
 }
 
 
@@ -302,6 +302,7 @@ def validate(
                 }
             )
     accelerator.print(f"Validating - Loss: {avg_loss}, acc: {avg_acc}")
+    avg_acc = avg_acc.cpu().item() if torch.is_tensor(avg_acc) else avg_acc
     return avg_acc
 
 
@@ -357,11 +358,12 @@ def validate_mix(
         else:
             swanlab.log(
                 {
-                    f"global/mix-validate-loss": avg_loss,
-                    f"global/mix-validate-acc": avg_acc,
+                    f"global/moe-validate-loss": avg_loss,
+                    f"global/moe-validate-acc": avg_acc,
                 }
             )
-    accelerator.print(f"Validating Mix - Loss: {avg_loss}, acc: {avg_acc}")
+    accelerator.print(f"Validating MoE - Loss: {avg_loss}, acc: {avg_acc}")
+    avg_acc = avg_acc.cpu().item() if torch.is_tensor(avg_acc) else avg_acc
     return avg_acc
 
 
@@ -369,7 +371,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--swanlab", type=bool, default=False)
     parser.add_argument("--dataset", type=str, default="ciciov2024")
-    parser.add_argument("--out_ratio", type=float, default=0.0)
+    parser.add_argument("--out_ratio", type=float, default=0)
     args = parser.parse_args()
     if CUR_DATASET == "ciciov2024":
         DS_PATH = CIC_IOV2024_IMAGE_DATASET_PATH
@@ -402,13 +404,21 @@ def main():
 
     # 客户端字典：idx -> client
     fed_global_model_weight = global_model.state_dict()
+
+    #! 退出率，选择几个永不参与联邦的客户端，但仍可以在finetune + moe 阶段使用全局模型
+    out_ratio: float = args.out_ratio
+    out_client_num: int = int(len(clients) * out_ratio)
+    out_clients: List[clientor.Client] = random.sample(clients, out_client_num)
+    fed_clients = [client for client in clients if client not in out_clients]
+    print(f"Fed Clients: {len(fed_clients)}, Out Clients: {len(out_clients)}")
+
     logger.info("====[FedAvg] Start Training...=====")
     for round in range(sw_config.get("global_rounds")):
         print(
             f"========== Global Round [{round + 1} / {sw_config.get('global_rounds')}] Start =========="
         )
         cur_clients: List[clientor.Client] = random.sample(
-            clients, sw_config.get("client_per_round")
+            fed_clients, sw_config.get("client_per_round")
         )
         # ! 1. 第一次加载全局模型
         cur_ratio_list = []
@@ -428,7 +438,7 @@ def main():
                 torch.cuda.empty_cache()
             else:
                 pass
-            logger.info(f"Training Client {client.idx}...")
+            logger.info(f"[FedAvg]Training Client {client.idx}...")
             cur_weight, _ = train_client(
                 client.idx,
                 GLOBAL_ACCELERATOR,
@@ -465,7 +475,7 @@ def main():
             args.swanlab,
         )
         fed_acc_list.append(fed_acc)
-        logger.info(f"Training Client {client.idx}...")
+        logger.info(f"[Finetune]Training Client {client.idx}...")
         client.model_local.load_state_dict(global_model.state_dict())
         train_finetune(
             client.idx,
@@ -488,10 +498,10 @@ def main():
     logger.info("====[Finetune] Training Finished=====")
 
     moe_acc_list = []
-    logger.info("====[Mix] Start Training...=====")
+    logger.info("====[MoE] Start Training...=====")
     train_gate_only = False
     for client in clients:
-        logger.info(f"Training Client {client.idx}...")
+        logger.info(f"[MoE]Training Client {client.idx}...")
         train_mix(
             client.idx,
             GLOBAL_ACCELERATOR,
@@ -513,7 +523,7 @@ def main():
             args.swanlab,
         )
         moe_acc_list.append(moe_acc)
-    logger.info("====[Mix] Training Finished=====")
+    logger.info("====[MoE] Training Finished=====")
 
     fed_acc_list = np.array(fed_acc_list)
     finetune_acc_list = np.array(finetune_acc_list)

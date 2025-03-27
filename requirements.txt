@@ -11,6 +11,7 @@ loguru
 tqdm
 dotenv
 ruff
+wandb
 
 # for Ascend Devices Only
 # torch-npu

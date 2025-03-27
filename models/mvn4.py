@@ -4,11 +4,7 @@ import torch.nn.functional as F
 
 
 MODEL_SPECS = {
-    "stage1": {
-        "block_name": "convbn", 
-        "num_blocks": 1, 
-        "block_specs": [[3, 32, 3, 2]]
-    },
+    "stage1": {"block_name": "convbn", "num_blocks": 1, "block_specs": [[3, 32, 3, 2]]},
     "stage2": {
         "block_name": "convbn",
         "num_blocks": 2,
@@ -48,11 +44,7 @@ MODEL_SPECS = {
 
 
 GATE_SPEC = {
-    "stage1": {
-        "block_name": "convbn", 
-        "num_blocks": 1, 
-        "block_specs": [[3, 32, 3, 2]]
-    },
+    "stage1": {"block_name": "convbn", "num_blocks": 1, "block_specs": [[3, 32, 3, 2]]},
     "stage2": {
         "block_name": "convbn",
         "num_blocks": 2,
@@ -62,8 +54,9 @@ GATE_SPEC = {
         "block_name": "convbn",
         "num_blocks": 2,
         "block_specs": [[32, 96, 3, 2], [96, 64, 1, 1]],
-    }
+    },
 }
+
 
 def make_divisible(
     value: float,
@@ -189,8 +182,7 @@ def build_blocks(layer_spec):
     return layers
 
 
-
-class  MVN4TrimNet(nn.Module):
+class MVN4TrimNet(nn.Module):
     def __init__(self, num_classes=10):
         super().__init__()
         self.spec = MODEL_SPECS
@@ -208,13 +200,15 @@ class  MVN4TrimNet(nn.Module):
         self.layer5 = build_blocks(self.spec["stage6"])
         # fc
         self.fc = nn.Linear(1280, num_classes)
-    
+
         self._kaiming_init()
-            
+
     def _kaiming_init(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode="fan_out", nonlinearity="leaky_relu"
+                )
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
@@ -235,23 +229,25 @@ class GateTrimNet(nn.Module):
     def __init__(self):
         super().__init__()
         self.origin_spec = GATE_SPEC
-        
+
         self.stage1 = build_blocks(self.origin_spec["stage1"])
         self.stage2 = build_blocks(self.origin_spec["stage2"])
         self.stage3 = build_blocks(self.origin_spec["stage3"])
         self.fc = nn.Linear(64, 1)
         self.activation = nn.Sigmoid()
-        
+
         self._kaiming_init()
-    
+
     def _kaiming_init(self):
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='leaky_relu')
+                nn.init.kaiming_normal_(
+                    m.weight, mode="fan_out", nonlinearity="leaky_relu"
+                )
             elif isinstance(m, nn.BatchNorm2d):
                 nn.init.constant_(m.weight, 1)
                 nn.init.constant_(m.bias, 0)
-    
+
     def forward(self, x):
         x = self.stage1(x)
         x = self.stage2(x)
@@ -261,4 +257,3 @@ class GateTrimNet(nn.Module):
         x = self.fc(x)
         x = self.activation(x)
         return x
-        
