@@ -11,6 +11,7 @@ import swanlab
 import torch
 import yaml
 from loguru import logger
+from swanlab.plugin.notification import LarkCallback
 from torch import nn, optim
 from torch.utils.data import DataLoader
 from torchmetrics import Accuracy
@@ -48,6 +49,11 @@ PROJECT_NAME = CONFIG["project_name"]
 EXPERIMENT_NAME = datetime.now().strftime("%Y-%m-%d")
 DESCRIPTION = CONFIG["description"]
 sw_config = CONFIG["sw_config"]
+
+lark_callback = LarkCallback(
+    webhook_url=os.getenv("LARK_WEBHOOK_URL"),
+    secret=os.getenv("LARK_SECRETS"),
+)
 
 
 def train_client(
@@ -404,14 +410,10 @@ def main():
     sw_config["iid"] = args.iid
     if args.iid:
         cur_split_type = clientor.SplitType.IID
-        EXPERIMENT_NAME: str = (
-            f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
-        )
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
     else:
         cur_split_type = clientor.SplitType.NON_IID
-        EXPERIMENT_NAME: str = (
-            f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
-        )
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
     logger.info(EXPERIMENT_NAME)
     if args.swanlab:
         swanlab.init(
@@ -419,6 +421,7 @@ def main():
             experiment_name=EXPERIMENT_NAME,
             description=DESCRIPTION,
             config=sw_config,
+            callbacks=[lark_callback],
         )
     global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
     global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
