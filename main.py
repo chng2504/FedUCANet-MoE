@@ -381,6 +381,7 @@ def main():
     parser.add_argument("--swanlab", type=bool, default=False)
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
+    parser.add_argument("--moe_global", type=bool, default=False)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
     sw_config["cur_dataset"] = CUR_DATASET
@@ -544,12 +545,35 @@ def main():
         moe_acc_list.append(moe_acc)
     logger.info("====[MoE] Training Finished=====")
 
+    if args.moe_global:
+        # ! 最后用全局测试集评估一下各个moe模型
+        moe_last_acc_list = []
+        logger.info("====[MoE] Evalualing global model on global test set...=====")
+        for client in clients:
+            clear_cache(device)
+            moe_last_acc = validate_mix(
+                client.idx,
+                GLOBAL_ACCELERATOR,
+                client.model_global,
+                client.model_local,
+                client.model_gate,
+                global_test_ds,
+                args.swanlab,
+            )
+            moe_last_acc_list.append(moe_last_acc)
+        moe_last_acc_list = np.array(moe_last_acc_list)
+        logger.info(
+            "====[MoE] Evalualing global model on global test set Finished====="
+        )
+
     fed_acc_list = np.array(fed_acc_list)
     finetune_acc_list = np.array(finetune_acc_list)
     moe_acc_list = np.array(moe_acc_list)
     print(f"fedavg-acc-mean: {np.mean(fed_acc_list)}")
     print(f"fine-une-acc: {np.mean(finetune_acc_list)}")
     print(f"moe-acc-mean: {np.mean(moe_acc_list)}")
+    if args.moe_global:
+        print(f"moe-last-acc-mean: {np.mean(moe_last_acc_list)}")
 
 
 if __name__ == "__main__":
