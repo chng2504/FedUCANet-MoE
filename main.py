@@ -15,6 +15,7 @@ import random
 from typing import Dict, List
 import numpy as np
 
+from datetime import datetime
 import clientor
 import aggregator
 
@@ -33,7 +34,7 @@ GLOBAL_ACCELERATOR = accelerate.Accelerator()
 device = GLOBAL_ACCELERATOR.device
 
 PROJECT_NAME: str = "FL-MoE"
-EXPERIMENT_NAME: str = "2025-03-26"
+EXPERIMENT_NAME: str = datetime.now().strftime("%Y-%m-%d")
 DESCRIPTION: str = "联邦MoE模型训练"
 sw_config = {
     "batch_size": 128,
@@ -45,10 +46,10 @@ sw_config = {
     "client_num": 20,
     "client_per_round": 5,
     "client_evaluate": 10,
-    "global_rounds": 15,
+    "global_rounds": 20,
     "local_rounds": 3,
     "learning_rate": 5e-5,
-    "out_ratio": 0.0
+    "out_ratio": 0.0,
 }
 
 
@@ -106,7 +107,7 @@ def train_client(
                 }
             )
         accelerator.print(
-            f"Epoch [{epoch + 1}/{epochs}] - Loss: {train_loss}, acc: {avg_acc}"
+            f"Client[{client_idx}]: Fed Epoch [{epoch + 1}/{epochs}] - Loss: {train_loss}, acc: {avg_acc}"
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
@@ -162,7 +163,7 @@ def train_finetune(
                 }
             )
         accelerator.print(
-            f"Local Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}"
+            f"Client[{client_idx}]: Local Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}"
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
@@ -254,7 +255,7 @@ def train_mix(
                 }
             )
         accelerator.print(
-            f"Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}"
+            f"Client[{client_idx}]: Local Epoch [{epoch + 1}/{local_epochs}] - Loss: {epoch_loss}, acc: {avg_acc}"
         )
         if avg_acc > train_acc_best:
             train_acc_best = avg_acc
@@ -302,7 +303,12 @@ def validate(
                     f"global/validate-acc": avg_acc,
                 }
             )
-    accelerator.print(f"Validating - Loss: {avg_loss}, acc: {avg_acc}")
+    if client_idx != -1:
+        accelerator.print(
+            f"Client[{client_idx}] Validating - Loss: {avg_loss}, acc: {avg_acc}"
+        )
+    else:
+        accelerator.print(f"Global Validating - Loss: {avg_loss}, acc: {avg_acc}")
     avg_acc = avg_acc.cpu().item() if torch.is_tensor(avg_acc) else avg_acc
     return avg_acc
 
@@ -363,7 +369,12 @@ def validate_mix(
                     f"global/moe-validate-acc": avg_acc,
                 }
             )
-    accelerator.print(f"Validating MoE - Loss: {avg_loss}, acc: {avg_acc}")
+    if client_idx != -1:
+        accelerator.print(
+            f"Client[{client_idx}] Validating MoE - Loss: {avg_loss}, acc: {avg_acc}"
+        )
+    else:
+        accelerator.print(f"Global Validating MoE - Loss: {avg_loss}, acc: {avg_acc}")
     avg_acc = avg_acc.cpu().item() if torch.is_tensor(avg_acc) else avg_acc
     return avg_acc
 
@@ -380,7 +391,18 @@ def main():
         DS_PATH = CAR_HACKING_IMAGE_DATASET_PATH
     else:
         raise ValueError("no current dataset")
-    sw_config['out_ratio'] = args.out_ratio
+    sw_config["out_ratio"] = args.out_ratio
+    CUR_DATASET = args.dataset
+    if CUR_DATASET == "ciciov2024":
+        sw_config["num_classes"] = 6
+    elif CUR_DATASET == "carhacking":
+        sw_config["num_classes"] = 5
+    else:
+        raise ValueError("no current dataset")
+
+    EXPERIMENT_NAME: str = (
+        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-{args.out_ratio}"
+    )
 
     if args.swanlab:
         swanlab.init(
