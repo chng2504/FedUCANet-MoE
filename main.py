@@ -385,6 +385,8 @@ def main():
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
     args = parser.parse_args()
+    CUR_DATASET = args.dataset
+    sw_config["cur_dataset"] = CUR_DATASET
     if CUR_DATASET == "ciciov2024":
         DS_PATH = CIC_IOV2024_IMAGE_DATASET_PATH
     elif CUR_DATASET == "carhacking":
@@ -392,7 +394,6 @@ def main():
     else:
         raise ValueError("no current dataset")
     sw_config["out_ratio"] = args.out_ratio
-    CUR_DATASET = args.dataset
     if CUR_DATASET == "ciciov2024":
         sw_config["num_classes"] = 6
     elif CUR_DATASET == "carhacking":
@@ -401,9 +402,9 @@ def main():
         raise ValueError("no current dataset")
 
     EXPERIMENT_NAME: str = (
-        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-{args.out_ratio}"
+        f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-({args.out_ratio})"
     )
-
+    logger.info(EXPERIMENT_NAME)
     if args.swanlab:
         swanlab.init(
             project_name=PROJECT_NAME,
