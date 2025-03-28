@@ -388,7 +388,7 @@ def main():
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
     parser.add_argument("--moe_global", type=bool, default=True)
-    parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--alpha", type=float, default=0.1)
     parser.add_argument("--iid", type=bool, default=False)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
@@ -623,12 +623,15 @@ def main():
     fed_acc_list = np.array(fed_acc_list)
     finetune_acc_list = np.array(finetune_acc_list)
     moe_acc_list = np.array(moe_acc_list)
-    print(f"fedavg-acc-mean: {np.mean(fed_acc_list)}")
-    print(f"fine-une-acc: {np.mean(finetune_acc_list)}")
-    print(f"moe-acc-mean: {np.mean(moe_acc_list)}")
+    print(f"[LocalTest]fedavg-global_model-acc-mean: {np.mean(fed_acc_list)}")
+    print(f"[LocalTest]finetune-local_model-acc-mean: {np.mean(finetune_acc_list)}")
     if args.moe_global:
-        print(f"finetune-acc-global-mean: {np.mean(finetune_acc_global_list)}")
-        print(f"moe-last-acc-mean: {np.mean(moe_last_acc_list)}")
+        print(
+            f"[GlobalTest]finetune-local_model-acc-mean: {np.mean(finetune_acc_global_list)}"
+        )
+    print(f"[LocalTest]moe-moe_model-acc-mean: {np.mean(moe_acc_list)}")
+    if args.moe_global:
+        print(f"[GlobalTest]moe-moe_model-acc-mean: {np.mean(moe_last_acc_list)}")
 
 
 if __name__ == "__main__":
