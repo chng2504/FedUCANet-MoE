@@ -106,6 +106,6 @@ def prepare_client_datasets(
             global_rate=global_rate,
         )
         clients.append(client)
-        ratio_list[i] = len(client.global_ds) / len(client.train_ds)
+        ratio_list[i] = len(client.test_ds) / len(test_ds)
 
     return clients, ratio_list, train_fig, test_fig

@@ -388,7 +388,7 @@ def main():
     parser.add_argument("--dataset", type=str, default="ciciov2024")
     parser.add_argument("--out_ratio", type=float, default=0)
     parser.add_argument("--moe_global", type=bool, default=True)
-    parser.add_argument("--alpha", type=float, default=0.1)
+    parser.add_argument("--alpha", type=float, default=1.0)
     parser.add_argument("--iid", type=bool, default=False)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
@@ -425,7 +425,7 @@ def main():
         )
     global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
     global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
-    clients, _, train_fig, test_fig = clientor.prepare_client_datasets(
+    clients, ratio_list, train_fig, test_fig = clientor.prepare_client_datasets(
         train_ds=global_train_ds,
         test_ds=global_test_ds,
         client_num=20,
@@ -623,15 +623,22 @@ def main():
     fed_acc_list = np.array(fed_acc_list)
     finetune_acc_list = np.array(finetune_acc_list)
     moe_acc_list = np.array(moe_acc_list)
-    print(f"[LocalTest]fedavg-global_model-acc-mean: {np.mean(fed_acc_list)}")
-    print(f"[LocalTest]finetune-local_model-acc-mean: {np.mean(finetune_acc_list)}")
+
+    print(
+        f"[LocalTest]fedavg-global_model-acc-mean: {np.sum(fed_acc_list * ratio_list)}"
+    )
+    print(
+        f"[LocalTest]finetune-local_model-acc-mean: {np.sum(finetune_acc_list * ratio_list)}"
+    )
     if args.moe_global:
         print(
-            f"[GlobalTest]finetune-local_model-acc-mean: {np.mean(finetune_acc_global_list)}"
+            f"[GlobalTest]finetune-local_model-acc-mean: {np.sum(finetune_acc_global_list * ratio_list)}"
         )
-    print(f"[LocalTest]moe-moe_model-acc-mean: {np.mean(moe_acc_list)}")
+    print(f"[LocalTest]moe-moe_model-acc-mean: {np.sum(moe_acc_list * ratio_list)}")
     if args.moe_global:
-        print(f"[GlobalTest]moe-moe_model-acc-mean: {np.mean(moe_last_acc_list)}")
+        print(
+            f"[GlobalTest]moe-moe_model-acc-mean: {np.sum(moe_last_acc_list * ratio_list)}"
+        )
 
 
 if __name__ == "__main__":
