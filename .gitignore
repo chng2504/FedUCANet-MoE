@@ -175,3 +175,6 @@ test/*
 .ruff_cache*
 
 *.pdf
+
+
+.__dpc*
