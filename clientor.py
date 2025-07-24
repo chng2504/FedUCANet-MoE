@@ -1,4 +1,3 @@
-import os
 from enum import Enum
 from typing import List, Tuple
 
@@ -10,6 +9,9 @@ from torch.utils.data import DataLoader
 
 from models.mvn4 import GateTrimNet, MVN4TrimNet
 from utils import sample
+
+import os
+import csv
 
 dotenv.load_dotenv()
 
@@ -57,55 +59,77 @@ class Client:
 
 
 def prepare_client_datasets(
-    train_ds: sample.ImageDataset,
-    test_ds: sample.ImageDataset,
+    full_ds: sample.ImageDataset,
     client_num: int = 20,
+    test_rate: float = 0.2,  # 每个客户端 20% 数据做测试集
     global_rate: float = 0.5,
-    alpha: float = 1.0,  # Dirchlet 采样值
+    alpha: float = 1.0,
     split_type: SplitType = SplitType.NON_IID,
-) -> Tuple[List[Client], np.ndarray, plt.Figure, plt.Figure]:
-    train_partitioner = sample.FLDataPartitioner(train_ds, client_num)
-    if split_type == SplitType.IID:
-        client_train_indices = train_partitioner.iid_split()
-    else:
-        client_train_indices = train_partitioner.non_iid_split(alpha=alpha)
-    client_train_datasets = [
-        sample.ClientDataset(train_ds, client_train_indices[i])
-        for i in range(client_num)
-    ]
-    print("Train_Distribution:")
-    train_partitioner.print_distribution(client_train_indices)
-    plt.figure(1)
-    train_plt = train_partitioner.visualize_distribution_plot(
-        client_train_indices, title="Train/Distribution"
-    )
-    train_fig = train_plt.gcf()
+) -> Tuple[List[Client], np.ndarray, plt.Figure, sample.ClientDataset]:
+    """
+    准备联邦学习的客户端数据集
+    返回：
+        clients: 客户端对象列表
+        ratio_list: 每个客户端在全体测试集中的比例（用于准确率加权平均）
+        dist_fig: 数据分布可视化图
+        global_test_ds: 所有客户端测试集汇总而成的全局测试集
+    """
 
-    test_partitioner = sample.FLDataPartitioner(test_ds, client_num)
+    # 1. 使用 Dirichlet 或 IID 分配原始数据索引
+    partitioner = sample.FLDataPartitioner(full_ds, client_num)
     if split_type == SplitType.IID:
-        client_test_indices = test_partitioner.iid_split()
+        client_indices = partitioner.iid_split()
     else:
-        client_test_indices = test_partitioner.non_iid_split(alpha=alpha)
-    client_test_datasets: List[sample.ClientDataset] = [
-        sample.ClientDataset(test_ds, client_test_indices[i]) for i in range(client_num)
-    ]
-    print("Test_Distribution:")
-    test_partitioner.print_distribution(client_test_indices)
-    plt.figure(2)
-    test_plt = test_partitioner.visualize_distribution_plot(
-        client_test_indices, title="Test/Distribution"
+        client_indices = partitioner.non_iid_split(alpha=alpha)
+
+    print("Client Raw Distribution:")
+    partitioner.print_distribution(client_indices)
+
+    # 2. 可视化分布
+    plt.figure(1)
+    dist_plt, dist_df = partitioner.visualize_distribution_plot(
+        client_indices, title="Client Raw Data Distribution"
     )
-    test_fig = test_plt.gcf()
-    clients: List[Client] = []
-    ratio_list: np.ndarray = np.zeros(client_num)
+    output_dir = os.path.join(os.getcwd(), 'distribution')
+    os.makedirs(output_dir, exist_ok=True)
+    dist_df.to_csv(
+        os.path.join(output_dir, f'client_distribution_alpha{str(alpha).replace(".", "_")}.csv')
+    )
+    dist_fig = dist_plt.gcf()
+
+    # 3. 划分每个客户端的 train/test 数据
+    clients = []
+    test_sizes = []        # 用于 ratio_list 的计算
+    test_indices_all = []  # 用于 global_test_ds 构建
+
     for i in range(client_num):
+        indices = client_indices[i]
+        np.random.shuffle(indices)
+
+        num_total = len(indices)
+        num_test = int(num_total * test_rate)
+        test_indices = indices[:num_test]
+        train_indices = indices[num_test:]
+
+        test_indices_all.extend(test_indices)
+        test_sizes.append(len(test_indices))
+
+        train_ds = sample.ClientDataset(full_ds, train_indices)
+        test_ds = sample.ClientDataset(full_ds, test_indices)
+
         client = Client(
-            i,
-            client_train_datasets[i],
-            client_test_datasets[i],
-            global_rate=global_rate,
+            idx=i,
+            train_ds=train_ds,
+            test_ds=test_ds,
+            global_rate=global_rate
         )
         clients.append(client)
-        ratio_list[i] = len(client.test_ds) / len(test_ds)
 
-    return clients, ratio_list, train_fig, test_fig
+    # 4. 计算测试集占比（ratio_list 用于加权平均）
+    total_test_samples = sum(test_sizes)
+    ratio_list = np.array(test_sizes) / total_test_samples
+
+    # 5. 构造全局测试集
+    global_test_ds = sample.ClientDataset(full_ds, test_indices_all)
+
+    return clients, ratio_list, dist_fig, global_test_ds

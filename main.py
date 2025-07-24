@@ -25,9 +25,14 @@ from utils.refresh import clear_cache
 
 dotenv.load_dotenv()
 
-CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
-CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
-CUR_DATASET = "ciciov2024"
+# CAR_HACKING_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/801826001594702957/output_sampled/output_sampled"#不分训练测试的大量图像
+
+CAR_HACKING_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/4002181034449985107/train/train"#不分训练测试的少量图像
+# CAR_HACKING_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/6916559390941990826/carhacking/carhacking"#分训练测试的少量图像
+
+
+CIC_IOV2024_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/6341789061772014206/ciciov2024"
+CUR_DATASET = "carhacking"
 
 try:
     import torch_npu  # For Ascend Devices Only
@@ -39,14 +44,14 @@ device = GLOBAL_ACCELERATOR.device
 
 
 def load_config(config_path: str = "config.yaml") -> dict:
-    with open(config_path, "r") as file:
+    with open(config_path, "r",encoding='utf-8') as file:
         config = yaml.safe_load(file)
     return config
 
 
 CONFIG = load_config()
 PROJECT_NAME = CONFIG["project_name"]
-EXPERIMENT_NAME = datetime.now().strftime("%Y-%m-%d")
+EXPERIMENT_NAME = datetime.now().strftime("%m-%d")
 DESCRIPTION = CONFIG["description"]
 sw_config = CONFIG["sw_config"]
 
@@ -239,6 +244,14 @@ def train_mix(
             global_prob = model_global(images)
 
             log_probs = gate_weight * local_prob + (1 - gate_weight) * global_prob
+            
+            # gate_weight = torch.sigmoid(model_gate(images))  # 限制在 [0,1]
+            # local_prob = torch.softmax(model_local(images), dim=1)
+            # global_prob = torch.softmax(model_global(images), dim=1)
+
+            log_probs = gate_weight * local_prob + (1 - gate_weight) * global_prob
+
+            
             loss = criterion(log_probs, labels)
 
             accelerator.backward(loss)
@@ -384,11 +397,11 @@ def validate_mix(
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--swanlab", type=bool, default=False)
-    parser.add_argument("--dataset", type=str, default="ciciov2024")
+    parser.add_argument("--swanlab", type=bool, default=True)
+    parser.add_argument("--dataset", type=str, default="carhacking")
     parser.add_argument("--out_ratio", type=float, default=0)
     parser.add_argument("--moe_global", type=bool, default=True)
-    parser.add_argument("--alpha", type=float, default=1.0)
+    parser.add_argument("--alpha", type=float, default=10)
     parser.add_argument("--iid", type=bool, default=False)
     args = parser.parse_args()
     CUR_DATASET = args.dataset
@@ -410,10 +423,10 @@ def main():
     sw_config["iid"] = args.iid
     if args.iid:
         cur_split_type = clientor.SplitType.IID
-        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%m-%d')}-{args.dataset}-iid-out({args.out_ratio})-alpha({args.alpha})"
     else:
         cur_split_type = clientor.SplitType.NON_IID
-        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%Y-%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
+        EXPERIMENT_NAME: str = f"{datetime.now().strftime('%m-%d')}-{args.dataset}-out({args.out_ratio})-alpha({args.alpha})"
     logger.info(EXPERIMENT_NAME)
     if args.swanlab:
         swanlab.init(
@@ -423,25 +436,20 @@ def main():
             config=sw_config,
             callbacks=[lark_callback],
         )
-    global_train_ds = sample.ImageDataset(f"{DS_PATH}/train")
-    global_test_ds = sample.ImageDataset(f"{DS_PATH}/test")
-    clients, ratio_list, train_fig, test_fig = clientor.prepare_client_datasets(
-        train_ds=global_train_ds,
-        test_ds=global_test_ds,
+        
+        
+    full_ds = sample.ImageDataset(f"{DS_PATH}")
+    
+    clients, ratio_list, dist_fig,global_test_ds = clientor.prepare_client_datasets(
+        full_ds=full_ds,
         client_num=20,
         split_type=cur_split_type,
         global_rate=0.5,
         alpha=args.alpha,
     )
-    train_fig.savefig(
-        f"temp/{EXPERIMENT_NAME}-train-distribution.pdf",
-        format="pdf",
-        dpi=600,
-        bbox_inches="tight",
-        pad_inches=0.05,
-    )
-    test_fig.savefig(
-        f"temp/{EXPERIMENT_NAME}-test-distribution.pdf",
+ 
+    dist_fig.savefig(
+        f"temp/{EXPERIMENT_NAME}-distribution.pdf",
         format="pdf",
         dpi=600,
         bbox_inches="tight",
@@ -451,8 +459,7 @@ def main():
     if args.swanlab:
         swanlab.log(
             {
-                "train_distribution": swanlab.Image(train_fig),
-                "test_distribution": swanlab.Image(test_fig),
+                "data_distribution": swanlab.Image(dist_fig),
             }
         )
 
@@ -530,6 +537,17 @@ def main():
             args.swanlab,
         )
         fed_acc_list.append(fed_acc)
+        
+        fed_acc_global_list=[]
+        fed_acc_global= validate(
+            client.idx,
+            GLOBAL_ACCELERATOR,
+            client.model_global,
+            global_test_ds,
+            args.swanlab,
+        )
+        fed_acc_global_list.append(fed_acc_global)
+        
         logger.info(f"[Finetune]Training Client {client.idx}...")
         client.model_local.load_state_dict(global_model.state_dict())
         train_finetune(
@@ -557,7 +575,7 @@ def main():
         logger.info("====[Finetune] Evalualing global model on global test set...=====")
         for client in clients:
             clear_cache(device)
-            finetune_acc_global = validate(
+            finetune_acc_global    = validate(
                 client.idx,
                 GLOBAL_ACCELERATOR,
                 client.model_local,
@@ -627,6 +645,10 @@ def main():
     print(
         f"[LocalTest]fedavg-global_model-acc-mean: {np.sum(fed_acc_list * ratio_list)}"
     )
+    print(
+        f"[GlobalTest]fedavg-global_model-acc-mean: {np.sum(fed_acc_global_list * ratio_list)}"
+    )
+    
     print(
         f"[LocalTest]finetune-local_model-acc-mean: {np.sum(finetune_acc_list * ratio_list)}"
     )

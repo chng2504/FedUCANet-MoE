@@ -1,15 +1,23 @@
-project_name: "fl-moe-can"
+project_name: "FedUCANetMoE"
 experiment_name: "auto"  # 将由代码动态替换为当前日期
-description: "联邦MoE模型训练"
+description: "联邦的MoE模型训练"
 
 # 模型训练参数
 sw_config:
     batch_size: 128
+    #batch_size:128
     num_classes: 6  # 这将根据dataset参数动态确定
     num_workers: 8
     cur_dataset: "ciciov2024"
 
     # 联邦学习参数
+    # client_num: 20
+    # client_per_round: 5
+    # client_evaluate: 10
+    # global_rounds: 20
+    # local_rounds: 3
+    # learning_rate: 0.00003  # 3e-5
+
     client_num: 20
     client_per_round: 5
     client_evaluate: 10

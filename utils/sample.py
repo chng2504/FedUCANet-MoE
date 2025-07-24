@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import torch
+import torch_npu
 import torchvision.datasets as datasets
 import torchvision.transforms as transforms
 from torch.utils.data import DataLoader
@@ -15,8 +16,23 @@ dotenv.load_dotenv()
 
 DEFAULT_IMAGE_SIZE = 224
 
-CAR_HACKING_IMAGE_DATASET_PATH = os.getenv("CAR_HACKING_IMAGE_DATASET")
-CIC_IOV2024_IMAGE_DATASET_PATH = os.getenv("CIC_IOV2024_IMAGE_DATASET")
+CAR_HACKING_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/1681502372209677867/train"
+CIC_IOV2024_IMAGE_DATASET_PATH = "/opt/dpcvol/datasets/6341789061772014206/ciciov2024"
+
+from typing import List
+
+def merge_client_datasets(client_datasets: List["ClientDataset"]) -> "ClientDataset":
+    """
+    合并多个客户端的 ClientDataset，返回一个新的 ClientDataset，包含所有样本（去重）
+    """
+    merged_indices = []
+    for ds in client_datasets:
+        merged_indices.extend(ds.client_indices)
+    if not client_datasets:
+        raise ValueError("client_datasets 不能为空")
+    original_dataset = client_datasets[0].original_dataset
+    merged_indices = list(set(merged_indices))  # 去重
+    return ClientDataset(original_dataset, merged_indices)
 
 
 class ImageDataset(datasets.ImageFolder):
@@ -59,7 +75,7 @@ class ImageDataset(datasets.ImageFolder):
 
 
 class FLDataPartitioner:
-    def __init__(self, dataset: datasets.ImageFolder, num_clients: int, seed: int = 42):
+    def __init__(self, dataset: datasets.ImageFolder, num_clients: int, seed: int =42):
         self.dataset = dataset
         self.num_clients = num_clients
         self.seed = seed
@@ -156,6 +172,7 @@ class FLDataPartitioner:
 
             np.random.shuffle(combined)
             client_indices.append(combined)
+            
 
         return client_indices
 
@@ -239,17 +256,36 @@ class FLDataPartitioner:
             counts = {cls: class_counts.get(cls, 0) for cls in all_classes}
             counts["client"] = f"Client {client_id}"
             client_data.append(counts)
+            
+        # custom_colors = {
+        #     "dos": "#66c2a5",           # 红色
+        #     "gas": "#fc8d62",           # 蓝色
+        #     "rpm": "#8da0cb",           # 绿色
+        #     "speed": "#a6d854",         # 黄色
+        #     "steering_wheel": "#ffd92f"  # 粉色
+        #  }
+        
+        custom_colors = {
+            "dos": "#66c2a5",           # 红色
+            "fuzzy": "#fc8d62",           # 蓝色
+             "gear": "#8da0cb",           # 绿色
+             "rpm": "#ffd92f",         # 黄色
+         }
 
         # 转换为DataFrame (宽格式数据)
         df = pd.DataFrame(client_data).set_index("client")
+        
+        
+        df = df[[cls for cls in custom_colors.keys()]]
 
+        
         # 创建图形
         plt.figure(figsize=figsize)
 
         # 使用Matplotlib创建堆叠条形图，但带有Seaborn样式
         ax = df.plot.bar(
             stacked=True,
-            colormap="tab20",
+            color=[custom_colors[cls] for cls in df.columns],
             width=0.8,
             edgecolor="white",
             linewidth=0.5,
@@ -278,7 +314,7 @@ class FLDataPartitioner:
 
         # 调整布局
         plt.tight_layout()
-        return plt
+        return plt,df
 
 
 class ClientDataset(torch.utils.data.Dataset):
@@ -356,6 +392,24 @@ if __name__ == "__main__":
 
     partitioner = FLDataPartitioner(train_ds, client_num)
     client_indices = partitioner.non_iid_split(alpha=1.0)
+    
+    # 确保目录存在
+    os.makedirs(path, exist_ok=True)
+
+    # 构造文件名
+    filename = f"client_indices_alpha{alpha}_{dataset}.csv"
+    filepath = os.path.join(path, filename)
+
+    # 转换为 DataFrame
+    df = pd.DataFrame.from_dict(
+        {f"Client_{i}": indices for i, indices in enumerate(client_indices)},
+        orient='index'
+    ).transpose()
+
+    # 保存为 CSV
+    df.to_csv(filepath, index=False)
+
+    print(f"已保存到: {filepath}")
 
     client_datasets = [
         ClientDataset(train_ds, client_indices[i]) for i in range(client_num)
