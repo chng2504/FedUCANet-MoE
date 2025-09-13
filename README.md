@@ -1,4 +1,4 @@
-# FL-MoE-for-CAN
+# FL-UCANet_MoE
 > This is a FedMoE federated learning framework for CAN anomaly detection
 
 The baseline model is UIBNet, obtained by pruning from MobileNetv4;
